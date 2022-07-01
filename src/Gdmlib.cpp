@@ -136,7 +136,8 @@ void GDM_FitFromTable(char **wspath,
 				      double *pIntercept, double *pCoeffs,
 				      double *pY, // observed
 				      double *pX, // predicted
-				      double *pE) // ecological dist
+				      double *pE, // ecological dist
+					  bool *logit)
 {
 	//
 	// Everything passed from R needs to be dereferenced...
@@ -265,7 +266,11 @@ void GDM_FitFromTable(char **wspath,
 	{
 		pY[i] = pResponse[i];
 		pE[i] = CalcDissimilarity( pPredData, pCoefficients, nRows, nTotalSplines+1, i );
-		pX[i] = 1.0 - exp(-pE[i]);
+		if (*logit) {
+			pX[i] = log(pE[i]/1.0 - pE[i]);
+		} else {
+			pX[i] = 1.0 - exp(-pE[i]);
+		}
 	}
 
 
@@ -321,7 +326,11 @@ void GDM_PredictFromTable(double *pData,
 	//
 	for ( long i=0; i<nRows; i++ )
 	{
-		pX[i] = 1.0 - exp(-CalcDissimilarity( pPredData, pCoeffs, nRows, nTotalSplines+1, i ));
+		if (*logit) {
+			pX[i] = log(CalcDissimilarity( pPredData, pCoeffs, nRows, nTotalSplines+1, i )/(1.0 - CalcDissimilarity( pPredData, pCoeffs, nRows, nTotalSplines+1, i )));
+		} else {
+			pX[i] = 1.0 - exp(-CalcDissimilarity( pPredData, pCoeffs, nRows, nTotalSplines+1, i ));
+		}
 	}
 
 
@@ -902,7 +911,8 @@ void GDM_FitFromTable(char **wspath,
 				      double *pIntercept, double *pCoeffs,
 				      double *pY, // observed
 				      double *pX, // predicted
-				      double *pE) // ecological dist
+				      double *pE, // ecological dist
+					  bool *logit)
 {
 	//
 	// Everything passed from R needs to be dereferenced...
@@ -1027,7 +1037,11 @@ void GDM_FitFromTable(char **wspath,
 	{
 		pY[i] = pResponse[i];
 		pE[i] = CalcDissimilarity( pPredData, pCoefficients, nRows, nTotalSplines+1, i );
-		pX[i] = 1.0 - exp(-pE[i]);
+		if (*logit) {
+			pX[i] = log(pE[i]/(1.0 - pE[i]));
+		} else {
+			pX[i] = 1.0 - exp(-pE[i]);
+		}
 	}
 
 
@@ -1083,7 +1097,11 @@ void GDM_PredictFromTable(double *pData,
 	//
 	for ( int i=0; i<nRows; i++ )
 	{
-		pX[i] = 1.0 - exp(-CalcDissimilarity( pPredData, pCoeffs, nRows, nTotalSplines+1, i ));
+		if (*logit) {
+			pX[i] = log(CalcDissimilarity( pPredData, pCoeffs, nRows, nTotalSplines+1, i )/(1.0 - CalcDissimilarity( pPredData, pCoeffs, nRows, nTotalSplines+1, i )));
+		} else {
+			pX[i] = 1.0 - exp(-CalcDissimilarity( pPredData, pCoeffs, nRows, nTotalSplines+1, i ));
+		}
 	}
 
 
@@ -1664,7 +1682,8 @@ void GDM_FitFromTable(char **wspath,
 				      double *pIntercept, double *pCoeffs,
 				      double *pY, // observed
 				      double *pX, // predicted
-				      double *pE) // ecological dist
+				      double *pE, // ecological dist
+					  bool *logit)
 {
 	//
 	// Everything passed from R needs to be dereferenced...
@@ -1816,7 +1835,11 @@ void GDM_FitFromTable(char **wspath,
 	{
 		pY[i] = pResponse[i];
 		pE[i] = CalcDissimilarity( pPredData, pCoefficients, nRows, nTotalSplines+1, i );
-		pX[i] = 1.0 - exp(-pE[i]);
+		if (*logit) {
+			pX[i] = log(pE[i]/(1.0 - pE[i]));
+		} else {
+			pX[i] = 1.0 - exp(-pE[i]);
+		}
 	}
 
 
@@ -1872,7 +1895,11 @@ void GDM_PredictFromTable(double *pData,
 	//
 	for ( int i=0; i<nRows; i++ )
 	{
-		pX[i] = 1.0 - exp(-CalcDissimilarity( pPredData, pCoeffs, nRows, nTotalSplines+1, i ));
+		if (*logit) {
+			pX[i] = log(CalcDissimilarity( pPredData, pCoeffs, nRows, nTotalSplines+1, i )/(1.0 - CalcDissimilarity( pPredData, pCoeffs, nRows, nTotalSplines+1, i )));
+		} else {
+			pX[i] = 1.0 - exp(-CalcDissimilarity( pPredData, pCoeffs, nRows, nTotalSplines+1, i ));
+		}
 	}
 
 
