@@ -137,12 +137,13 @@ void GDM_FitFromTable(char **wspath,
 				      double *pY, // observed
 				      double *pX, // predicted
 				      double *pE, // ecological dist
-					  bool *logit)
+					  int *pDoLogit)
 {
 	//
 	// Everything passed from R needs to be dereferenced...
 	//
 	int nDoGeo = *pDoGeo;
+	int logit = *pDoLogit;
 	int nPreds = *pPreds;
 	long nRows = *pRows;
 	//int nCols = *pCols;
@@ -154,7 +155,7 @@ void GDM_FitFromTable(char **wspath,
 	double *pResponse = &pData[COL_RESPONSE * nRows];
 	if ( NULL == pResponse )
 	{
-		//Message("pResponse is NULL", "ERROR in GDM_FitFromTable");
+		Message("pResponse is NULL", "ERROR in GDM_FitFromTable");
 		return;
 	}
 
@@ -165,7 +166,7 @@ void GDM_FitFromTable(char **wspath,
 	double *pWeights = &pData[COL_WEIGHTS * nRows];
 	if ( NULL == pWeights )
 	{
-		//Message("pWeights is NULL", "ERROR in GDM_FitFromTable");
+		Message("pWeights is NULL", "ERROR in GDM_FitFromTable");
 		return;
 	}
 
@@ -176,7 +177,7 @@ void GDM_FitFromTable(char **wspath,
 	double *pPredData = ConstructMatrix(nDoGeo, pData, pQuantiles, nPreds, pSplines, (long long)nRows);
 	if ( NULL == pPredData )
 	{
-		//Message("pPredData is NULL", "ERROR in GDM_FitFromTable");
+		Message("pPredData is NULL", "ERROR in GDM_FitFromTable");
 		return;
 	}
 	// Sum the splines vector for the total number of splines
@@ -184,7 +185,7 @@ void GDM_FitFromTable(char **wspath,
 	// Message(nTotalSplines, "nTotalSplines");
 	// pQuantiles will have a length of nPreds * nTotalSplines
 	// ShowQuantiles(pQuantiles, nPreds, pSplines);
-	//DebugPredMatrix("PredMatrix.csv", pPredData, nRows, nPreds, pSplines, nTotalSplines+1);
+	DebugPredMatrix("PredMatrix.csv", pPredData, nRows, nPreds, pSplines, nTotalSplines+1);
 
 
 	//
@@ -202,7 +203,7 @@ void GDM_FitFromTable(char **wspath,
 	int h = _open( lpTmpFile, _O_BINARY | _O_CREAT | _O_TRUNC | _O_RDWR, S_IREAD | S_IWRITE );
 	if ( h < 0 )
 	{
-		//Message("Cannot create binary image file", "ERROR in GDM_FitFromTable");
+		Message("Cannot create binary image file", "ERROR in GDM_FitFromTable");
 		if (pPredData) delete[] pPredData;
 		return;
 	}
@@ -226,7 +227,8 @@ void GDM_FitFromTable(char **wspath,
 											        nTotalSplines+1,
 											        pResponse,
 											        &dGDMDeviance,
-											        pWeights);
+											        pWeights,
+													logit);
 
 	//
 	// remove the temporary matrix file if it exists (and it should!!) now that we don't need it
@@ -237,7 +239,7 @@ void GDM_FitFromTable(char **wspath,
 	//
 	// create a NULL model and return the deviance
 	//
-	double dNullDeviance = GetWeightedNULLDeviance( nRows, pResponse, pWeights );
+	double dNullDeviance = GetWeightedNULLDeviance( nRows, pResponse, pWeights, logit );
 
 
 	//
@@ -266,8 +268,9 @@ void GDM_FitFromTable(char **wspath,
 	{
 		pY[i] = pResponse[i];
 		pE[i] = CalcDissimilarity( pPredData, pCoefficients, nRows, nTotalSplines+1, i );
-		if (*logit) {
-			pX[i] = log(pE[i]/1.0 - pE[i]);
+		if (logit) {
+			pX[i] = 1.0 / (1.0 + (exp(-pE[i])));
+			//pX[i] = log(pE[i]/(1.0 - pE[i]));
 		} else {
 			pX[i] = 1.0 - exp(-pE[i]);
 		}
@@ -294,7 +297,7 @@ void GDM_FitFromTable(char **wspath,
 void GDM_PredictFromTable(double *pData,
 		                  int *pDoGeo, int *pPreds, int *pRows,
 					      double *pQuantiles, int *pSplines, double *pCoeffs,
-					      double *pX) // predicted
+					      double *pX, int *pDoLogit) // predicted
 {
 	//
 	// Everything passed from R needs to be dereferenced...
@@ -302,6 +305,7 @@ void GDM_PredictFromTable(double *pData,
 	int nDoGeo = *pDoGeo;
 	int nPreds = *pPreds;
 	long nRows  = *pRows;
+	int logit = *pDoLogit;
 
 
 	//
@@ -310,15 +314,15 @@ void GDM_PredictFromTable(double *pData,
 	double *pPredData = ConstructMatrix(nDoGeo, pData, pQuantiles, nPreds, pSplines, (long long)nRows);
 	if ( NULL == pPredData )
 	{
-		//Message("pPredData is NULL", "ERROR");
+		Message("pPredData is NULL", "ERROR");
 		return;
 	}
 
 	int nTotalSplines = GetTotalSplineCount(pSplines, nPreds);
-	//Message(nTotalSplines, "nTotalSplines");
+	Message(nTotalSplines, "nTotalSplines");
 	// pQuantiles will have a length of nPreds * nTotalSplines
 	//ShowQuantiles(pQuantiles, nPreds, pSplines);
-	//DebugPredMatrix("PredMatrix.csv", pPredData, nRows, nPreds, pSplines, nTotalSplines+1);
+	// DebugPredMatrix("PredMatrix.csv", pPredData, nRows, nPreds, pSplines, nTotalSplines+1);
 
 
 	//
@@ -326,8 +330,9 @@ void GDM_PredictFromTable(double *pData,
 	//
 	for ( long i=0; i<nRows; i++ )
 	{
-		if (*logit) {
-			pX[i] = log(CalcDissimilarity( pPredData, pCoeffs, nRows, nTotalSplines+1, i )/(1.0 - CalcDissimilarity( pPredData, pCoeffs, nRows, nTotalSplines+1, i )));
+		if (logit) {
+			pX[i] = 1.0 / (1.0 + (exp(-CalcDissimilarity( pPredData, pCoeffs, nRows, nTotalSplines+1, i ))));
+			//pX[i] = log(CalcDissimilarity( pPredData, pCoeffs, nRows, nTotalSplines+1, i )/(1.0 - CalcDissimilarity( pPredData, pCoeffs, nRows, nTotalSplines+1, i )));
 		} else {
 			pX[i] = 1.0 - exp(-CalcDissimilarity( pPredData, pCoeffs, nRows, nTotalSplines+1, i ));
 		}
@@ -619,7 +624,7 @@ int GetTotalSplineCount(int *pSplines, int nPreds)
 double *ConstructMatrix(int nDoGeo, double *pData, double *pQuants, int nPreds, int *pSplines, long long nRows)
 {
 	int nTotalSplines = GetTotalSplineCount(pSplines, nPreds);
-	//Message(nTotalSplines, "nTotalSplines");
+	Message(nTotalSplines, "nTotalSplines");
 
 	//
 	// Construct the predictor matrix with an extra column for the intercept
@@ -628,7 +633,7 @@ double *ConstructMatrix(int nDoGeo, double *pData, double *pQuants, int nPreds, 
 	double *pPredData = new double [nSize];
 	if ( NULL == pPredData )
 	{
-		//Message("Cannot allocate Predictor Data", "ERROR in ConstructMatrix");
+		Message("Cannot allocate Predictor Data", "ERROR in ConstructMatrix");
 		return(NULL);
 	}
 	for ( long long i=0; i<nSize; i++ ) pPredData[i] = 0.0;
@@ -837,7 +842,7 @@ void ShowQuantiles(double *pQuants, int nPreds, int *pSplines)
 			sprintf( buff, "%s %f ", buff, *pTmp);
 			++pTmp;
 		}
-		//Message(buff);
+		Message(buff);
 	}
 }
 
@@ -912,12 +917,13 @@ void GDM_FitFromTable(char **wspath,
 				      double *pY, // observed
 				      double *pX, // predicted
 				      double *pE, // ecological dist
-					  bool *logit)
+					  int *pDoLogit)
 {
 	//
 	// Everything passed from R needs to be dereferenced...
 	//
 	int nDoGeo = *pDoGeo;
+	int logit = *pDoLogit;
 	int nPreds = *pPreds;
 	int nRows = *pRows;
 	//int nCols = *pCols;
@@ -929,7 +935,7 @@ void GDM_FitFromTable(char **wspath,
 	double *pResponse = &pData[COL_RESPONSE * nRows];
 	if ( NULL == pResponse )
 	{
-		//Message("pResponse is NULL", "ERROR in GDM_FitFromTable");
+		Message("pResponse is NULL", "ERROR in GDM_FitFromTable");
 		return;
 	}
 
@@ -940,7 +946,7 @@ void GDM_FitFromTable(char **wspath,
 	double *pWeights = &pData[COL_WEIGHTS * nRows];
 	if ( NULL == pWeights )
 	{
-		//Message("pWeights is NULL", "ERROR in GDM_FitFromTable");
+		Message("pWeights is NULL", "ERROR in GDM_FitFromTable");
 		return;
 	}
 
@@ -951,7 +957,7 @@ void GDM_FitFromTable(char **wspath,
 	double *pPredData = ConstructMatrix(nDoGeo, pData, pQuantiles, nPreds, pSplines, nRows);
 	if ( NULL == pPredData )
 	{
-		//Message("pPredData is NULL", "ERROR in GDM_FitFromTable");
+		Message("pPredData is NULL", "ERROR in GDM_FitFromTable");
 		return;
 	}
 	// Sum the splines vector for the total number of splines
@@ -959,7 +965,7 @@ void GDM_FitFromTable(char **wspath,
 	// Message(nTotalSplines, "nTotalSplines");
 	// pQuantiles will have a length of nPreds * nTotalSplines
 	// ShowQuantiles(pQuantiles, nPreds, pSplines);
-	//DebugPredMatrix("PredMatrix.csv", pPredData, nRows, nPreds, pSplines, nTotalSplines+1);
+	// DebugPredMatrix("PredMatrix.csv", pPredData, nRows, nPreds, pSplines, nTotalSplines+1);
 
 
 	//
@@ -977,7 +983,7 @@ void GDM_FitFromTable(char **wspath,
 	int h = _open( lpTmpFile, _O_BINARY | _O_CREAT | _O_TRUNC | _O_RDWR, S_IREAD | S_IWRITE );
 	if ( h < 0 )
 	{
-		//Message("Cannot create binary image file", "ERROR in GDM_FitFromTable");
+		Message("Cannot create binary image file", "ERROR in GDM_FitFromTable");
 		if (pPredData) delete[] pPredData;
 		return;
 	}
@@ -997,7 +1003,8 @@ void GDM_FitFromTable(char **wspath,
 											        nTotalSplines+1,
 											        pResponse,
 											        &dGDMDeviance,
-											        pWeights);
+											        pWeights,
+													logit);
 
 	//
 	// remove the temporary matrix file if it exists (and it should!!) now that we don't need it
@@ -1008,7 +1015,7 @@ void GDM_FitFromTable(char **wspath,
 	//
 	// create a NULL model and return the deviance
 	//
-	double dNullDeviance = GetWeightedNULLDeviance( nRows, pResponse, pWeights );
+	double dNullDeviance = GetWeightedNULLDeviance( nRows, pResponse, pWeights, logit );
 
 
 	//
@@ -1037,8 +1044,9 @@ void GDM_FitFromTable(char **wspath,
 	{
 		pY[i] = pResponse[i];
 		pE[i] = CalcDissimilarity( pPredData, pCoefficients, nRows, nTotalSplines+1, i );
-		if (*logit) {
-			pX[i] = log(pE[i]/(1.0 - pE[i]));
+		if (logit) {
+			pX[i] = 1.0 / (1.0 + (exp(-pE[i])));
+			//pX[i] = log(pE[i]/(1.0 - pE[i]));
 		} else {
 			pX[i] = 1.0 - exp(-pE[i]);
 		}
@@ -1065,7 +1073,7 @@ void GDM_FitFromTable(char **wspath,
 void GDM_PredictFromTable(double *pData,
 		                  int *pDoGeo, int *pPreds, int *pRows,
 					      double *pQuantiles, int *pSplines, double *pCoeffs,
-					      double *pX) // predicted
+					      double *pX, int *pDoLogit) // predicted
 {
 	//
 	// Everything passed from R needs to be dereferenced...
@@ -1073,6 +1081,7 @@ void GDM_PredictFromTable(double *pData,
 	int nDoGeo = *pDoGeo;
 	int nPreds = *pPreds;
 	int nRows  = *pRows;
+	int logit = *pDoLogit;
 
 
 	//
@@ -1081,15 +1090,15 @@ void GDM_PredictFromTable(double *pData,
 	double *pPredData = ConstructMatrix(nDoGeo, pData, pQuantiles, nPreds, pSplines, nRows);
 	if ( NULL == pPredData )
 	{
-		//Message("pPredData is NULL", "ERROR");
+		Message("pPredData is NULL", "ERROR");
 		return;
 	}
 
 	int nTotalSplines = GetTotalSplineCount(pSplines, nPreds);
-	//Message(nTotalSplines, "nTotalSplines");
+	Message(nTotalSplines, "nTotalSplines");
 	// pQuantiles will have a length of nPreds * nTotalSplines
 	//ShowQuantiles(pQuantiles, nPreds, pSplines);
-	//DebugPredMatrix("PredMatrix.csv", pPredData, nRows, nPreds, pSplines, nTotalSplines+1);
+	DebugPredMatrix("PredMatrix.csv", pPredData, nRows, nPreds, pSplines, nTotalSplines+1);
 
 
 	//
@@ -1097,8 +1106,9 @@ void GDM_PredictFromTable(double *pData,
 	//
 	for ( int i=0; i<nRows; i++ )
 	{
-		if (*logit) {
-			pX[i] = log(CalcDissimilarity( pPredData, pCoeffs, nRows, nTotalSplines+1, i )/(1.0 - CalcDissimilarity( pPredData, pCoeffs, nRows, nTotalSplines+1, i )));
+		if (logit) {
+			pX[i] = 1.0 / (1.0 + (exp(-CalcDissimilarity( pPredData, pCoeffs, nRows, nTotalSplines+1, i ))));
+			//pX[i] = log(CalcDissimilarity( pPredData, pCoeffs, nRows, nTotalSplines+1, i )/(1.0 - CalcDissimilarity( pPredData, pCoeffs, nRows, nTotalSplines+1, i )));
 		} else {
 			pX[i] = 1.0 - exp(-CalcDissimilarity( pPredData, pCoeffs, nRows, nTotalSplines+1, i ));
 		}
@@ -1391,7 +1401,7 @@ int GetTotalSplineCount(int *pSplines, int nPreds)
 double *ConstructMatrix(int nDoGeo, double *pData, double *pQuants, int nPreds, int *pSplines, int nRows)
 {
 	int nTotalSplines = GetTotalSplineCount(pSplines, nPreds);
-	//Message(nTotalSplines, "nTotalSplines");
+	Message(nTotalSplines, "nTotalSplines");
 
 	//
 	// Construct the predictor matrix with an extra column for the intercept
@@ -1400,7 +1410,7 @@ double *ConstructMatrix(int nDoGeo, double *pData, double *pQuants, int nPreds, 
 	double *pPredData = new double [nSize];
 	if ( NULL == pPredData )
 	{
-		//Message("Cannot allocate Predictor Data", "ERROR in ConstructMatrix");
+		Message("Cannot allocate Predictor Data", "ERROR in ConstructMatrix");
 		return(NULL);
 	}
 	for ( int i=0; i<nSize; i++ ) pPredData[i] = 0.0;
@@ -1608,7 +1618,7 @@ void ShowQuantiles(double *pQuants, int nPreds, int *pSplines)
 			sprintf( buff, "%s %f ", buff, *pTmp);
 			++pTmp;
 		}
-		//Message(buff);
+		Message(buff);
 	}
 }
 
@@ -1683,12 +1693,13 @@ void GDM_FitFromTable(char **wspath,
 				      double *pY, // observed
 				      double *pX, // predicted
 				      double *pE, // ecological dist
-					  bool *logit)
+					  int *pDoLogit)
 {
 	//
 	// Everything passed from R needs to be dereferenced...
 	//
 	int nDoGeo = *pDoGeo;
+	int logit = *pDoLogit;
 	int nPreds = *pPreds;
 	int nRows = *pRows;
 	//int nCols = *pCols;
@@ -1700,7 +1711,7 @@ void GDM_FitFromTable(char **wspath,
 	double *pResponse = &pData[COL_RESPONSE * nRows];
 	if ( NULL == pResponse )
 	{
-		//Message("pResponse is NULL", "ERROR in GDM_FitFromTable");
+		Message("pResponse is NULL", "ERROR in GDM_FitFromTable");
 		return;
 	}
 
@@ -1711,7 +1722,7 @@ void GDM_FitFromTable(char **wspath,
 	double *pWeights = &pData[COL_WEIGHTS * nRows];
 	if ( NULL == pWeights )
 	{
-		//Message("pWeights is NULL", "ERROR in GDM_FitFromTable");
+		Message("pWeights is NULL", "ERROR in GDM_FitFromTable");
 		return;
 	}
 
@@ -1722,7 +1733,7 @@ void GDM_FitFromTable(char **wspath,
 	double *pPredData = ConstructMatrix(nDoGeo, pData, pQuantiles, nPreds, pSplines, nRows);
 	if ( NULL == pPredData )
 	{
-		//Message("pPredData is NULL", "ERROR in GDM_FitFromTable");
+		Message("pPredData is NULL", "ERROR in GDM_FitFromTable");
 		return;
 	}
 	// Sum the splines vector for the total number of splines
@@ -1730,7 +1741,7 @@ void GDM_FitFromTable(char **wspath,
 	// Message(nTotalSplines, "nTotalSplines");
 	// pQuantiles will have a length of nPreds * nTotalSplines
 	// ShowQuantiles(pQuantiles, nPreds, pSplines);
-	//DebugPredMatrix("PredMatrix.csv", pPredData, nRows, nPreds, pSplines, nTotalSplines+1);
+	// DebugPredMatrix("PredMatrix.csv", pPredData, nRows, nPreds, pSplines, nTotalSplines+1);
 
 
 	//
@@ -1748,7 +1759,7 @@ void GDM_FitFromTable(char **wspath,
 	int h = creat( lpTmpFile, PERMS );
 	if ( h < 0 )
 	{
-		//Message("Cannot create binary image file", "ERROR in GDM_FitFromTable");
+		Message("Cannot create binary image file", "ERROR in GDM_FitFromTable");
 		if (pPredData) delete[] pPredData;
 		return;
 	}
@@ -1794,7 +1805,8 @@ void GDM_FitFromTable(char **wspath,
 											        nTotalSplines+1,
 											        pResponse,
 											        &dGDMDeviance,
-											        pWeights);
+											        pWeights,
+													logit);
 
 	//
 	// remove the temporary matrix file if it exists (and it should!!) now that we don't need it
@@ -1806,7 +1818,7 @@ void GDM_FitFromTable(char **wspath,
 	//
 	// create a NULL model and return the deviance
 	//
-	double dNullDeviance = GetWeightedNULLDeviance( nRows, pResponse, pWeights );
+	double dNullDeviance = GetWeightedNULLDeviance( nRows, pResponse, pWeights, logit );
 
 
 	//
@@ -1835,8 +1847,9 @@ void GDM_FitFromTable(char **wspath,
 	{
 		pY[i] = pResponse[i];
 		pE[i] = CalcDissimilarity( pPredData, pCoefficients, nRows, nTotalSplines+1, i );
-		if (*logit) {
-			pX[i] = log(pE[i]/(1.0 - pE[i]));
+		if (logit) {
+			pX[i] = 1.0 / (1.0 + (exp(-pE[i])));
+			//pX[i] = log(pE[i]/(1.0 - pE[i]));
 		} else {
 			pX[i] = 1.0 - exp(-pE[i]);
 		}
@@ -1863,12 +1876,13 @@ void GDM_FitFromTable(char **wspath,
 void GDM_PredictFromTable(double *pData,
 		                  int *pDoGeo, int *pPreds, int *pRows,
 					      double *pQuantiles, int *pSplines, double *pCoeffs,
-					      double *pX) // predicted
+					      double *pX, int *pDoLogit) // predicted
 {
 	//
 	// Everything passed from R needs to be dereferenced...
 	//
 	int nDoGeo = *pDoGeo;
+	int logit = *pDoLogit;
 	int nPreds = *pPreds;
 	int nRows  = *pRows;
 
@@ -1879,15 +1893,15 @@ void GDM_PredictFromTable(double *pData,
 	double *pPredData = ConstructMatrix(nDoGeo, pData, pQuantiles, nPreds, pSplines, nRows);
 	if ( NULL == pPredData )
 	{
-		//Message("pPredData is NULL", "ERROR");
+		Message("pPredData is NULL", "ERROR");
 		return;
 	}
 
 	int nTotalSplines = GetTotalSplineCount(pSplines, nPreds);
-	//Message(nTotalSplines, "nTotalSplines");
+	Message(nTotalSplines, "nTotalSplines");
 	// pQuantiles will have a length of nPreds * nTotalSplines
 	//ShowQuantiles(pQuantiles, nPreds, pSplines);
-	//DebugPredMatrix("PredMatrix.csv", pPredData, nRows, nPreds, pSplines, nTotalSplines+1);
+	DebugPredMatrix("PredMatrix.csv", pPredData, nRows, nPreds, pSplines, nTotalSplines+1);
 
 
 	//
@@ -1895,8 +1909,9 @@ void GDM_PredictFromTable(double *pData,
 	//
 	for ( int i=0; i<nRows; i++ )
 	{
-		if (*logit) {
-			pX[i] = log(CalcDissimilarity( pPredData, pCoeffs, nRows, nTotalSplines+1, i )/(1.0 - CalcDissimilarity( pPredData, pCoeffs, nRows, nTotalSplines+1, i )));
+		if (logit) {
+			pX[i] = 1.0 / (1.0 + (exp(-CalcDissimilarity( pPredData, pCoeffs, nRows, nTotalSplines+1, i ))));
+			//pX[i] = log(CalcDissimilarity( pPredData, pCoeffs, nRows, nTotalSplines+1, i )/(1.0 - CalcDissimilarity( pPredData, pCoeffs, nRows, nTotalSplines+1, i )));
 		} else {
 			pX[i] = 1.0 - exp(-CalcDissimilarity( pPredData, pCoeffs, nRows, nTotalSplines+1, i ));
 		}
@@ -2187,7 +2202,7 @@ int GetTotalSplineCount(int *pSplines, int nPreds)
 double *ConstructMatrix(int nDoGeo, double *pData, double *pQuants, int nPreds, int *pSplines, int nRows)
 {
 	int nTotalSplines = GetTotalSplineCount(pSplines, nPreds);
-	//Message(nTotalSplines, "nTotalSplines");
+	Message(nTotalSplines, "nTotalSplines");
 
 	//
 	// Construct the predictor matrix with an extra column for the intercept
@@ -2196,7 +2211,7 @@ double *ConstructMatrix(int nDoGeo, double *pData, double *pQuants, int nPreds, 
 	double *pPredData = new double [nSize];
 	if ( NULL == pPredData )
 	{
-		//Message("Cannot allocate Predictor Data", "ERROR in ConstructMatrix");
+		Message("Cannot allocate Predictor Data", "ERROR in ConstructMatrix");
 		return(NULL);
 	}
 	for ( long long i=0; i<nSize; i++ ) pPredData[i] = 0.0;
@@ -2404,7 +2419,7 @@ double DoSplineCalc( double dVal, double q1, double q2, double q3 )
 // 			sprintf( buff, "%s %f ", buff, *pTmp);
 // 			++pTmp;
 // 		}
-// 		//Message(buff);
+// 		Message(buff);
 // 	}
 // }
 

@@ -103,8 +103,13 @@ plot.gdm <- function (x, plot.layout = c(2,2), plot.color = "blue",
   plot(x$ecological, x$observed, xlab="Predicted Ecological Distance", ylab="Observed Compositional Dissimilarity", type="n", ylim=c(0,1))
   points(x$ecological, x$observed, pch=20, cex=0.25, col=plot.color)
   overlayX <- seq( from=min(x$ecological), to=max(x$ecological), length=PSAMPLE )
-  overlayY <- 1 - exp( - overlayX )
-  lines( overlayX, overlayY, lwd=plot.linewidth )
+  if (x$logit) {
+    overlayY <- 1.0 / (1.0 + (exp(-overlayX)))
+    lines( overlayX, overlayY, lwd=plot.linewidth )
+  } else {
+    overlayY <- 1 - exp( - overlayX )
+    lines( overlayX, overlayY, lwd=plot.linewidth )
+  }
   thisplot <- thisplot + 1
 
   ##determines rather or not to put multiple plots on one page or not

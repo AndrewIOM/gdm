@@ -128,12 +128,12 @@
 #' @importFrom stats median quantile
 #'
 #' @export
-gdm <- function (data, geo=FALSE, splines=NULL, knots=NULL){
+gdm <- function (data, geo=FALSE, logit=TRUE, splines=NULL, knots=NULL){
   #################
   ##lines used to quickly test function
-  #data <- sitepairs
-  #geo <- F
-  #splines <- NULL
+  # data <- obs_test
+  # geo <- F
+  # splines <- NULL
   # knots <- NULL
   #################
   options(warn.FPU = FALSE)
@@ -167,6 +167,10 @@ gdm <- function (data, geo=FALSE, splines=NULL, knots=NULL){
   ##checks knots inputs
   if(is.null(knots)==FALSE & !is(knots, "numeric")){
     stop("knots argument is not of class = 'numeric'.")
+  }
+
+  if (!(isTRUE(logit) || isFALSE(logit))) {
+    stop("logit agrument is not TRUE or FALSE.")
   }
 
   ##check that the response data is [0..1]
@@ -383,6 +387,7 @@ gdm <- function (data, geo=FALSE, splines=NULL, knots=NULL){
            response = as.double(p6),
            preddata = as.double(p7),
            ecodist = as.double(p8),
+           pDoLogit = as.integer(logit),
            PACKAGE = "gdm")
 
   m <- match.call(expand.dots = F)
@@ -390,6 +395,7 @@ gdm <- function (data, geo=FALSE, splines=NULL, knots=NULL){
   ##creates and populates the gdm model object
   gdmModOb <- structure(list(dataname = m[[2]],
                              geo = geo,
+                             logit = logit,
                              sample = nrow(data),
                              gdmdeviance = z$gdmdev,
                              nulldeviance = z$nulldev,

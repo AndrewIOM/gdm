@@ -19,14 +19,14 @@ void GDM_FitFromTable( char **wspath, double *pData,
 					   int *pSplines, double *pQuantiles,
 					   double *pGDMDev, double *pNullDev, double *pExpDev, 
 					   double *pIntercept, double *pCoeffs,
-					   double *pY, double *pX, double *pE );
+					   double *pY, double *pX, double *pE, int *pDoLogit );
 
 
 
 void GDM_PredictFromTable(double *pData, 
                           int *pDoGeo, int *pPreds, int *pRows, 
 				          double *pQuantiles,  int *pSplines, double *pCoeffs,
-				          double *pX);
+				          double *pX, int *pDoLogit);
 
 
 
@@ -77,7 +77,7 @@ double *ConstructMatrix(int nDoGeo, double *pData, double *pQuants, int nPreds, 
 void GDM_PredictFromTable(double *pData, 
 		                  int *pDoGeo, int *pPreds, int *pRows, 
 					      double *pQuantiles, int *pSplines, double *pCoeffs,
-					      double *pX);
+					      double *pX, int *pDoLogit);
 
 //
 // Populate pPredData as a transformed GDM predictor to plot in R-Stats

@@ -39,7 +39,8 @@ static double dEpsilon = 0.0001;
 //
 double *WeightedNNLSRegression( char *lpTmpFile,
 							    double *pEnvDataMatrix, long long nRows, long long nCols,
-								double *pRespVector, double *pDeviance, double *pWeights)
+								double *pRespVector, double *pDeviance, double *pWeights,
+								long long logit)
 {
 	long long i;
 
@@ -77,7 +78,12 @@ double *WeightedNNLSRegression( char *lpTmpFile,
 		for ( i=0; i<nRows; i++ )
 		{
 			// do the initial transformation...
-			pUU[i] = 1.0 - exp( -pNN[i] );
+			if (logit) {
+				pUU[i] = 1.0 / (1.0 + (exp(-pNN[i])));
+				//pUU[i] = log(pNN[i] / (1.0 - pNN[i]));
+			} else {
+				pUU[i] = 1.0 - exp( -pNN[i] );
+			}
 
 			// recalculate the weights
 			pWW[i] = sqrt( pWeights[i] * (( 1.0 - pUU[i] ) / pUU[i]) );
@@ -94,7 +100,7 @@ double *WeightedNNLSRegression( char *lpTmpFile,
 		// NOTE: we send a copy of the environmental data matrix as
 		//	     this data gets modified inside the called function
 		//
-		pCoeff = nnlsFITDouble( pEnvDataMatrix, nRows, nCols, pZZ, pWW );
+		pCoeff = nnlsFITDouble( pEnvDataMatrix, nRows, nCols, pZZ, pWW, logit );
 
 		//
 		// restore values in the matrix data block
@@ -220,7 +226,12 @@ double GetWeightedNULLDeviance( long long nRows, double *pRespVector, double *pW
 		for ( long long i=0; i<nRows; i++ )
 		{
 			// do the initial transformation...
-			pUU[i] = 1.0 - exp( -pNN[i] );
+			if (logit) {
+				pUU[i] = 1.0 / (1.0 + (exp(-pNN[i])));
+				//pUU[i] = log(pNN[i] / (1.0 - pNN[i]));
+			} else {
+				pUU[i] = 1.0 - exp( -pNN[i] );
+			}
 
 			// recalculate the weights
 			pWW[i] = sqrt( pWeights[i] * (( 1.0 - pUU[i] ) / pUU[i]) );
@@ -238,7 +249,7 @@ double GetWeightedNULLDeviance( long long nRows, double *pRespVector, double *pW
 		//	     this data gets modified inside the called function
 		//
 		double *pCopyOfNullVector = CopyEnvMatrixDouble( pNullVector, nRows, 1 );
-		pCoeff = nnlsFITDouble( pCopyOfNullVector, nRows, 1, pZZ, pWW );
+		pCoeff = nnlsFITDouble( pCopyOfNullVector, nRows, 1, pZZ, pWW, logit );
 		if ( pCopyOfNullVector ) delete[] pCopyOfNullVector;
 		////////////////////////////////////////////////////////////////////////////////
 
@@ -344,7 +355,7 @@ double *CopyEnvMatrixDouble( double *pMatrix, long long nRows, long long nCols )
 //
 // Returns the coeffiecients[nCols] for the best fit of the data to the reponse.
 //
-double *nnlsFITDouble( double *pEnvDataMatrix, long long nRows, long long nCols, double *pRespVector, double *pWeights )
+double *nnlsFITDouble( double *pEnvDataMatrix, long long nRows, long long nCols, double *pRespVector, double *pWeights, long long logit )
 {
 	//
 	// get the data matrix memory block
@@ -387,7 +398,21 @@ double *nnlsFITDouble( double *pEnvDataMatrix, long long nRows, long long nCols,
 	//  do the matrix regression
 	//
 	// this is the new version with WEIGHTING
-	nnls_Weighted( a, &mda, &m, &n, b, pWeights, x, &rnorm, w, zz, indx, &mode );
+	if (logit) {
+		double* con = new double [ nCols ];
+		for (size_t i = 0; i < nCols; i++)
+		{
+			if (i == 0) {
+				// Flag the first column to be non-positive.
+				con[i] = -1;
+			} else {
+				con[i] = 1;
+			}
+		}
+		nnnpls_Weighted( a, &mda, &m, &n, con, b, pWeights, x, &rnorm, w, zz, indx, &mode );
+	} else {
+		nnls_Weighted( a, &mda, &m, &n, b, pWeights, x, &rnorm, w, zz, indx, &mode );
+	}
 	//////////////////////////////////////////////////////////////////////////
 
 	//
@@ -447,7 +472,7 @@ double *nnlsFITDouble( double *pEnvDataMatrix, long long nRows, long long nCols,
 //
 double *WeightedNNLSRegression( char *lpTmpFile,
 							    double *pEnvDataMatrix, int nRows, int nCols,
-								double *pRespVector, double *pDeviance, double *pWeights )
+								double *pRespVector, double *pDeviance, double *pWeights, int logit )
 {
 	int i;
 
@@ -485,7 +510,12 @@ double *WeightedNNLSRegression( char *lpTmpFile,
 		for ( i=0; i<nRows; i++ )
 		{
 			// do the initial transformation...
-			pUU[i] = 1.0 - exp( -pNN[i] );
+			if (logit) {
+				pUU[i] = 1.0 / (1.0 + (exp(-pNN[i])));
+				//pUU[i] = log(pNN[i] / (1.0 - pNN[i]));
+			} else {
+				pUU[i] = 1.0 - exp( -pNN[i] );
+			}
 
 			// recalculate the weights
 			pWW[i] = sqrt( pWeights[i] * (( 1.0 - pUU[i] ) / pUU[i]) );
@@ -503,7 +533,7 @@ double *WeightedNNLSRegression( char *lpTmpFile,
 		//	     this data gets modified inside the called function
 		//
 		if (pCoeff) delete[] pCoeff;
-		pCoeff = nnlsFITDouble( pEnvDataMatrix, nRows, nCols, pZZ, pWW );
+		pCoeff = nnlsFITDouble( pEnvDataMatrix, nRows, nCols, pZZ, pWW, logit );
 		if ( NULL == pCoeff )
 		{
 			if ( pNN ) delete[] pNN;
@@ -617,7 +647,12 @@ double GetWeightedNULLDeviance( int nRows, double *pRespVector, double *pWeights
 		for ( int i=0; i<nRows; i++ )
 		{
 			// do the initial transformation...
-			pUU[i] = 1.0 - exp( -pNN[i] );
+			if (logit) {
+				pUU[i] = 1.0 / (1.0 + (exp(-pNN[i])));
+				//pUU[i] = log(pNN[i] / (1.0 - pNN[i]));
+			} else {
+				pUU[i] = 1.0 - exp( -pNN[i] );
+			}
 
 			// recalculate the weights
 			pWW[i] = sqrt( pWeights[i] * (( 1.0 - pUU[i] ) / pUU[i]) );
@@ -636,7 +671,7 @@ double GetWeightedNULLDeviance( int nRows, double *pRespVector, double *pWeights
 		//
 		double *pCopyOfNullVector = CopyEnvMatrixDouble( pNullVector, nRows, 1 );
 		if (pCoeff) delete[] pCoeff;
-		pCoeff = nnlsFITDouble( pCopyOfNullVector, nRows, 1, pZZ, pWW );
+		pCoeff = nnlsFITDouble( pCopyOfNullVector, nRows, 1, pZZ, pWW, logit );
 		if ( pCopyOfNullVector ) delete[] pCopyOfNullVector;
 		////////////////////////////////////////////////////////////////////////////////
 
@@ -740,7 +775,7 @@ double *CopyEnvMatrixDouble( double *pMatrix, int nRows, int nCols )
 //
 // Returns the coefficients[nCols] for the best fit of the data to the reponse.
 //
-double *nnlsFITDouble( double *pEnvDataMatrix, int nRows, int nCols, double *pRespVector, double *pWeights )
+double *nnlsFITDouble( double *pEnvDataMatrix, int nRows, int nCols, double *pRespVector, double *pWeights, int logit )
 {
 	//
 	// get the data matrix memory block
@@ -783,7 +818,22 @@ double *nnlsFITDouble( double *pEnvDataMatrix, int nRows, int nCols, double *pRe
 	//  do the matrix regression
 	//
 	// this is the new version with WEIGHTING
-	nnls_Weighted( a, &mda, &m, &n, b, pWeights, x, &rnorm, w, zz, indx, &mode );
+
+	if (logit) {
+		double* con = new double [ nCols ];
+		for (size_t i = 0; i < nCols; i++)
+		{
+			if (i == 0) {
+				// Flag the first column to be non-positive.
+				con[i] = -1;
+			} else {
+				con[i] = 1;
+			}
+		}
+		nnnpls_Weighted( a, &mda, &m, &n, con, b, pWeights, x, &rnorm, w, zz, indx, &mode );
+	} else {
+		nnls_Weighted( a, &mda, &m, &n, b, pWeights, x, &rnorm, w, zz, indx, &mode );
+	}
 	//////////////////////////////////////////////////////////////////////////
 
 	//
@@ -847,7 +897,7 @@ double *nnlsFITDouble( double *pEnvDataMatrix, int nRows, int nCols, double *pRe
 //
 double *WeightedNNLSRegression( char *lpTmpFile,
 							    double *pEnvDataMatrix, int nRows, int nCols,
-								double *pRespVector, double *pDeviance, double *pWeights )
+								double *pRespVector, double *pDeviance, double *pWeights, int logit )
 {
 	int i;
 
@@ -885,7 +935,12 @@ double *WeightedNNLSRegression( char *lpTmpFile,
 		for ( i=0; i<nRows; i++ )
 		{
 			// do the initial transformation...
-			pUU[i] = 1.0 - exp( -pNN[i] );
+			if (logit) {
+				pUU[i] = 1.0 / (1.0 + (exp(-pNN[i])));
+				//pUU[i] = log(pNN[i] / (1.0 - pNN[i]));
+			} else {
+				pUU[i] = 1.0 - exp( -pNN[i] );
+			}
 
 			// recalculate the weights
 			pWW[i] = sqrt( pWeights[i] * (( 1.0 - pUU[i] ) / pUU[i]) );
@@ -903,7 +958,7 @@ double *WeightedNNLSRegression( char *lpTmpFile,
 		//	     this data gets modified inside the called function
 		//
 		if (pCoeff) delete[] pCoeff;
-		pCoeff = nnlsFITDouble( pEnvDataMatrix, nRows, nCols, pZZ, pWW );
+		pCoeff = nnlsFITDouble( pEnvDataMatrix, nRows, nCols, pZZ, pWW, logit );
 		if ( NULL == pCoeff )
 		{
 			if ( pNN ) delete[] pNN;
@@ -984,7 +1039,7 @@ double *WeightedNNLSRegression( char *lpTmpFile,
 //
 // Create a NULL model and return the WEIGHTED deviance
 //
-double GetWeightedNULLDeviance( int nRows, double *pRespVector, double *pWeights )
+double GetWeightedNULLDeviance( int nRows, double *pRespVector, double *pWeights, int logit )
 {
 	//
 	// The data matrix is just a single vector of ONES
@@ -1022,7 +1077,12 @@ double GetWeightedNULLDeviance( int nRows, double *pRespVector, double *pWeights
 		for ( int i=0; i<nRows; i++ )
 		{
 			// do the initial transformation...
-			pUU[i] = 1.0 - exp( -pNN[i] );
+			if (logit) {
+				pUU[i] = 1.0 / (1.0 + (exp(-pNN[i])));
+				//pUU[i] = log(pNN[i] / (1.0 - pNN[i]));
+			} else {
+				pUU[i] = 1.0 - exp( -pNN[i] );
+			}
 
 			// recalculate the weights
 			pWW[i] = sqrt( pWeights[i] * (( 1.0 - pUU[i] ) / pUU[i]) );
@@ -1041,7 +1101,7 @@ double GetWeightedNULLDeviance( int nRows, double *pRespVector, double *pWeights
 		//
 		double *pCopyOfNullVector = CopyEnvMatrixDouble( pNullVector, nRows, 1 );
 		if (pCoeff) delete[] pCoeff;
-		pCoeff = nnlsFITDouble( pCopyOfNullVector, nRows, 1, pZZ, pWW );
+		pCoeff = nnlsFITDouble( pCopyOfNullVector, nRows, 1, pZZ, pWW, logit );
 		if ( pCopyOfNullVector ) delete[] pCopyOfNullVector;
 		////////////////////////////////////////////////////////////////////////////////
 
@@ -1145,7 +1205,7 @@ double *CopyEnvMatrixDouble( double *pMatrix, int nRows, int nCols )
 //
 // Returns the coefficients[nCols] for the best fit of the data to the reponse.
 //
-double *nnlsFITDouble( double *pEnvDataMatrix, int nRows, int nCols, double *pRespVector, double *pWeights )
+double *nnlsFITDouble( double *pEnvDataMatrix, int nRows, int nCols, double *pRespVector, double *pWeights, int logit )
 {
 	//
 	// get the data matrix memory block
@@ -1188,7 +1248,23 @@ double *nnlsFITDouble( double *pEnvDataMatrix, int nRows, int nCols, double *pRe
 	//  do the matrix regression
 	//
 	// this is the new version with WEIGHTING
-	nnls_Weighted( a, &mda, &m, &n, b, pWeights, x, &rnorm, w, zz, indx, &mode );
+
+	if (logit) {
+		double* con = new double [ nCols ];
+		for (size_t i = 0; i < nCols; i++)
+		{
+			if (i == 0) {
+				// Flag the first column to be non-positive.
+				con[i] = -1;
+			} else {
+				con[i] = 1;
+			}
+		}
+		nnnpls_Weighted( a, &mda, &m, &n, con, b, pWeights, x, &rnorm, w, zz, indx, &mode );
+	} else {
+		nnls_Weighted( a, &mda, &m, &n, b, pWeights, x, &rnorm, w, zz, indx, &mode );
+	}
+
 	//////////////////////////////////////////////////////////////////////////
 
 	//

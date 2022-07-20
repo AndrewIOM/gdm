@@ -531,6 +531,473 @@ L400:
 
 } /* nnls_ */
 
+/* Note that calls to 'write' have been commented out */
+/* since such call trigger warnings in R -KMM, March 2012 */
+/* Also, made DUMMY double precision DUMMY(*) */
+/*     SUBROUTINE NNNPLS  (A,MDA,M,N,CON,B,X,RNORM,W,ZZ,INDEX,MODE) */
+
+/*  Algorithm NNNPLS: NONNEGATIVE LEAST SQUARES with trivial modifications */
+/*  to allow for non-positive constraints as well (made by Katharine Mullen, */
+/*  11.2007) */
+
+/*  The original version of this code was developed by */
+/*  Charles L. Lawson and Richard J. Hanson at Jet Propulsion Laboratory */
+/*  1973 JUN 15, and published in the book */
+/*  "SOLVING LEAST SQUARES PROBLEMS", Prentice-HalL, 1974. */
+/*  Revised FEB 1995 to accompany reprinting of the book by SIAM. */
+
+/*     GIVEN AN M BY N MATRIX, A, AND AN M-VECTOR, B,  COMPUTE AN */
+/*     N-VECTOR, X, THAT SOLVES THE LEAST SQUARES PROBLEM */
+
+/*                      A * X = B  SUBJECT TO X .GE. 0 */
+/*     ------------------------------------------------------------------ */
+/*                     Subroutine Arguments */
+
+/*     A(),MDA,M,N     MDA IS THE FIRST DIMENSIONING PARAMETER FOR THE */
+/*                     ARRAY, A().   ON ENTRY A() CONTAINS THE M BY N */
+/*                     MATRIX, A.           ON EXIT A() CONTAINS */
+/*                     THE PRODUCT MATRIX, Q*A , WHERE Q IS AN */
+/*                     M BY M ORTHOGONAL MATRIX GENERATED IMPLICITLY BY */
+/*                     THIS SUBROUTINE. */
+/*     B()     ON ENTRY B() CONTAINS THE M-VECTOR, B.   ON EXIT B() CON- */
+/*             TAINS Q*B. */
+/*     CON()   M-VECTOR CON, that contains -1 where B is constrained to a */
+/*             non-positive value, 1 where B is constrained to a non-negative */
+/*             value */
+/*     X()     ON ENTRY X() NEED NOT BE INITIALIZED.  ON EXIT X() WILL */
+/*             CONTAIN THE SOLUTION VECTOR. */
+/*     RNORM   ON EXIT RNORM CONTAINS THE EUCLIDEAN NORM OF THE */
+/*             RESIDUAL VECTOR. */
+/*     W()     AN N-ARRAY OF WORKING SPACE.  ON EXIT W() WILL CONTAIN */
+/*             THE DUAL SOLUTION VECTOR.   W WILL SATISFY W(I) = 0. */
+/*             FOR ALL I IN SET P  AND W(I) .LE. 0. FOR ALL I IN SET Z */
+/*     ZZ()     AN M-ARRAY OF WORKING SPACE. */
+/*     INDEX()     AN INTEGER WORKING ARRAY OF LENGTH AT LEAST N. */
+/*                 ON EXIT THE CONTENTS OF THIS ARRAY DEFINE THE SETS */
+/*                 P AND Z AS FOLLOWS.. */
+
+/*                 INDEX(1)   THRU INDEX(NSETP) = SET P. */
+/*                 INDEX(IZ1) THRU INDEX(IZ2)   = SET Z. */
+/*                 IZ1 = NSETP + 1 = NPP1 */
+/*                 IZ2 = N */
+/*     MODE    THIS IS A SUCCESS-FAILURE FLAG WITH THE FOLLOWING */
+/*             MEANINGS. */
+/*             1     THE SOLUTION HAS BEEN COMPUTED SUCCESSFULLY. */
+/*             2     THE DIMENSIONS OF THE PROBLEM ARE BAD. */
+/*                   EITHER M .LE. 0 OR N .LE. 0. */
+/*             3    ITERATION COUNT EXCEEDED.  MORE THAN 3*N ITERATIONS. */
+
+/*     ------------------------------------------------------------------ */
+/* Subroutine */ int nnnpls_(doublereal *a, integer *mda, integer *m, integer 
+	*n, doublereal *con, doublereal *b, doublereal *x, doublereal *rnorm, 
+	doublereal *w, doublereal *zz, integer *index, integer *mode)
+{
+    /* System generated locals */
+    integer a_dim1, a_offset, i__1, i__2;
+    doublereal d__1, d__2;
+
+    /* Builtin functions */
+    double sqrt(doublereal);
+
+    /* Local variables */
+    static integer i__, j, l;
+    static doublereal t;
+    static integer c1, c2;
+    static integer nsetp;
+    extern /* Subroutine */ int g1_(doublereal *, doublereal *, doublereal *, 
+	    doublereal *, doublereal *);
+    static doublereal cc;
+    extern /* Subroutine */ int h12_(integer *, integer *, integer *, integer 
+	    *, doublereal *, integer *, doublereal *, doublereal *, integer *,
+	     integer *, integer *);
+    static integer ii, jj, ip;
+    static doublereal sm;
+    static integer iz, jz;
+    static doublereal up, ss;
+    static integer iz1, iz2, npp1;
+    extern doublereal diff_(doublereal *, doublereal *);
+    static integer iter;
+    static doublereal temp, wmax, alpha, asave;
+    static integer itmax, izmax;
+    static doublereal dummy[1], unorm, ztest;
+    static integer rtnkey;
+
+/*     ------------------------------------------------------------------ */
+/*     integer INDEX(N) */
+/*     double precision A(MDA,N), B(M), W(N), X(N), ZZ(M) */
+/*     ------------------------------------------------------------------ */
+    /* Parameter adjustments */
+    a_dim1 = *mda;
+    a_offset = 1 + a_dim1;
+    a -= a_offset;
+    --con;
+    --b;
+    --x;
+    --w;
+    --zz;
+    --index;
+
+    /* Function Body */
+    *mode = 1;
+    if (*m <= 0 || *n <= 0) {
+	*mode = 2;
+	return 0;
+    }
+    iter = 0;
+    itmax = *n * 3;
+/*  USE CON() TO FLIP THE SIGN OF A() WHERE A CONSTRAINT TO NON-POSITIVE VALUES */
+/*  IS DESIRED */
+    i__1 = *n;
+    for (c2 = 1; c2 <= i__1; ++c2) {
+	if (con[c2] < 0.) {
+	    i__2 = *m;
+	    for (c1 = 1; c1 <= i__2; ++c1) {
+		a[c1 + c2 * a_dim1] = -a[c1 + c2 * a_dim1];
+	    }
+	}
+    }
+
+/*                    INITIALIZE THE ARRAYS INDEX() AND X(). */
+
+    i__1 = *n;
+    for (i__ = 1; i__ <= i__1; ++i__) {
+	x[i__] = 0.;
+/* L20: */
+	index[i__] = i__;
+    }
+
+    iz2 = *n;
+    iz1 = 1;
+    nsetp = 0;
+    npp1 = 1;
+/*                             ******  MAIN LOOP BEGINS HERE  ****** */
+L30:
+/*                  QUIT IF ALL COEFFICIENTS ARE ALREADY IN THE SOLUTION. */
+/*                        OR IF M COLS OF A HAVE BEEN TRIANGULARIZED. */
+
+    if (iz1 > iz2 || nsetp >= *m) {
+	goto L350;
+    }
+
+/*         COMPUTE COMPONENTS OF THE DUAL (NEGATIVE GRADIENT) VECTOR W(). */
+
+    i__1 = iz2;
+    for (iz = iz1; iz <= i__1; ++iz) {
+	j = index[iz];
+	sm = 0.;
+	i__2 = *m;
+	for (l = npp1; l <= i__2; ++l) {
+/* L40: */
+	    sm += a[l + j * a_dim1] * b[l];
+	}
+	w[j] = sm;
+/* L50: */
+    }
+/*                                   FIND LARGEST POSITIVE W(J). */
+L60:
+    wmax = 0.;
+    i__1 = iz2;
+    for (iz = iz1; iz <= i__1; ++iz) {
+	j = index[iz];
+	if (w[j] > wmax) {
+	    wmax = w[j];
+	    izmax = iz;
+	}
+/* L70: */
+    }
+
+/*             IF WMAX .LE. 0. GO TO TERMINATION. */
+/*             THIS INDICATES SATISFACTION OF THE KUHN-TUCKER CONDITIONS. */
+
+    if (wmax <= 0.) {
+	goto L350;
+    }
+    iz = izmax;
+    j = index[iz];
+
+/*     THE SIGN OF W(J) IS OK FOR J TO BE MOVED TO SET P. */
+/*     BEGIN THE TRANSFORMATION AND CHECK NEW DIAGONAL ELEMENT TO AVOID */
+/*     NEAR LINEAR DEPENDENCE. */
+
+    asave = a[npp1 + j * a_dim1];
+    i__1 = npp1 + 1;
+    h12_(&c__1, &npp1, &i__1, m, &a[j * a_dim1 + 1], &c__1, &up, dummy, &c__1,
+	     &c__1, &c__0);
+    unorm = 0.;
+    if (nsetp != 0) {
+	i__1 = nsetp;
+	for (l = 1; l <= i__1; ++l) {
+/* L90: */
+/* Computing 2nd power */
+	    d__1 = a[l + j * a_dim1];
+	    unorm += d__1 * d__1;
+	}
+    }
+    unorm = sqrt(unorm);
+    d__2 = unorm + (d__1 = a[npp1 + j * a_dim1], abs(d__1)) * .01;
+    if (diff_(&d__2, &unorm) > 0.) {
+
+/*        COL J IS SUFFICIENTLY INDEPENDENT.  COPY B INTO ZZ, UPDATE ZZ */
+/*        AND SOLVE FOR ZTEST ( = PROPOSED NEW VALUE FOR X(J) ). */
+
+	i__1 = *m;
+	for (l = 1; l <= i__1; ++l) {
+/* L120: */
+	    zz[l] = b[l];
+	}
+	i__1 = npp1 + 1;
+	h12_(&c__2, &npp1, &i__1, m, &a[j * a_dim1 + 1], &c__1, &up, &zz[1], &
+		c__1, &c__1, &c__1);
+	ztest = zz[npp1] / a[npp1 + j * a_dim1];
+
+/*                                     SEE IF ZTEST IS POSITIVE */
+
+	if (ztest > 0.) {
+	    goto L140;
+	}
+    }
+
+/*     REJECT J AS A CANDIDATE TO BE MOVED FROM SET Z TO SET P. */
+/*     RESTORE A(NPP1,J), SET W(J)=0., AND LOOP BACK TO TEST DUAL */
+/*     COEFFS AGAIN. */
+
+    a[npp1 + j * a_dim1] = asave;
+    w[j] = 0.;
+    goto L60;
+
+/*     THE INDEX  J=INDEX(IZ)  HAS BEEN SELECTED TO BE MOVED FROM */
+/*     SET Z TO SET P.    UPDATE B,  UPDATE INDICES,  APPLY HOUSEHOLDER */
+/*     TRANSFORMATIONS TO COLS IN NEW SET Z,  ZERO SUBDIAGONAL ELTS IN */
+/*     COL J,  SET W(J)=0. */
+
+L140:
+    i__1 = *m;
+    for (l = 1; l <= i__1; ++l) {
+/* L150: */
+	b[l] = zz[l];
+    }
+
+    index[iz] = index[iz1];
+    index[iz1] = j;
+    ++iz1;
+    nsetp = npp1;
+    ++npp1;
+
+    if (iz1 <= iz2) {
+	i__1 = iz2;
+	for (jz = iz1; jz <= i__1; ++jz) {
+	    jj = index[jz];
+	    h12_(&c__2, &nsetp, &npp1, m, &a[j * a_dim1 + 1], &c__1, &up, &a[
+		    jj * a_dim1 + 1], &c__1, mda, &c__1);
+/* L160: */
+	}
+    }
+
+    if (nsetp != *m) {
+	i__1 = *m;
+	for (l = npp1; l <= i__1; ++l) {
+/* L180: */
+	    a[l + j * a_dim1] = 0.;
+	}
+    }
+
+    w[j] = 0.;
+/*                                SOLVE THE TRIANGULAR SYSTEM. */
+/*                                STORE THE SOLUTION TEMPORARILY IN ZZ(). */
+    rtnkey = 1;
+    goto L400;
+L200:
+
+/*                       ******  SECONDARY LOOP BEGINS HERE ****** */
+
+/*                          ITERATION COUNTER. */
+
+L210:
+    ++iter;
+    if (iter > itmax) {
+	*mode = 3;
+/*        write (*,'(/a)') ' NNLS quitting on iteration count.' */
+	goto L350;
+    }
+
+/*                    SEE IF ALL NEW CONSTRAINED COEFFS ARE FEASIBLE. */
+/*                                  IF NOT COMPUTE ALPHA. */
+
+    alpha = 2.;
+    i__1 = nsetp;
+    for (ip = 1; ip <= i__1; ++ip) {
+	l = index[ip];
+	if (zz[ip] <= 0.) {
+	    t = -x[l] / (zz[ip] - x[l]);
+	    if (alpha > t) {
+		alpha = t;
+		jj = ip;
+	    }
+	}
+/* L240: */
+    }
+
+/*          IF ALL NEW CONSTRAINED COEFFS ARE FEASIBLE THEN ALPHA WILL */
+/*          STILL = 2.    IF SO EXIT FROM SECONDARY LOOP TO MAIN LOOP. */
+
+    if (alpha == 2.) {
+	goto L330;
+    }
+
+/*          OTHERWISE USE ALPHA WHICH WILL BE BETWEEN 0. AND 1. TO */
+/*          INTERPOLATE BETWEEN THE OLD X AND THE NEW ZZ. */
+
+    i__1 = nsetp;
+    for (ip = 1; ip <= i__1; ++ip) {
+	l = index[ip];
+	x[l] += alpha * (zz[ip] - x[l]);
+/* L250: */
+    }
+
+/*        MODIFY A AND B AND THE INDEX ARRAYS TO MOVE COEFFICIENT I */
+/*        FROM SET P TO SET Z. */
+
+    i__ = index[jj];
+L260:
+    x[i__] = 0.;
+
+    if (jj != nsetp) {
+	++jj;
+	i__1 = nsetp;
+	for (j = jj; j <= i__1; ++j) {
+	    ii = index[j];
+	    index[j - 1] = ii;
+	    g1_(&a[j - 1 + ii * a_dim1], &a[j + ii * a_dim1], &cc, &ss, &a[j 
+		    - 1 + ii * a_dim1]);
+	    a[j + ii * a_dim1] = 0.;
+	    i__2 = *n;
+	    for (l = 1; l <= i__2; ++l) {
+		if (l != ii) {
+
+/*                 Apply procedure G2 (CC,SS,A(J-1,L),A(J,L)) */
+
+		    temp = a[j - 1 + l * a_dim1];
+		    a[j - 1 + l * a_dim1] = cc * temp + ss * a[j + l * a_dim1]
+			    ;
+		    a[j + l * a_dim1] = -ss * temp + cc * a[j + l * a_dim1];
+		}
+/* L270: */
+	    }
+
+/*                 Apply procedure G2 (CC,SS,B(J-1),B(J)) */
+
+	    temp = b[j - 1];
+	    b[j - 1] = cc * temp + ss * b[j];
+	    b[j] = -ss * temp + cc * b[j];
+/* L280: */
+	}
+    }
+
+    npp1 = nsetp;
+    --(nsetp);
+    --iz1;
+    index[iz1] = i__;
+
+/*        SEE IF THE REMAINING COEFFS IN SET P ARE FEASIBLE.  THEY SHOULD */
+/*        BE BECAUSE OF THE WAY ALPHA WAS DETERMINED. */
+/*        IF ANY ARE INFEASIBLE IT IS DUE TO ROUND-OFF ERROR.  ANY */
+/*        THAT ARE NONPOSITIVE WILL BE SET TO ZERO */
+/*        AND MOVED FROM SET P TO SET Z. */
+
+    i__1 = nsetp;
+    for (jj = 1; jj <= i__1; ++jj) {
+	i__ = index[jj];
+	if (x[i__] <= 0.) {
+	    goto L260;
+	}
+/* L300: */
+    }
+
+/*         COPY B( ) INTO ZZ( ).  THEN SOLVE AGAIN AND LOOP BACK. */
+
+    i__1 = *m;
+    for (i__ = 1; i__ <= i__1; ++i__) {
+/* L310: */
+	zz[i__] = b[i__];
+    }
+    rtnkey = 2;
+    goto L400;
+L320:
+    goto L210;
+/*                      ******  END OF SECONDARY LOOP  ****** */
+
+L330:
+    i__1 = nsetp;
+    for (ip = 1; ip <= i__1; ++ip) {
+	i__ = index[ip];
+/* L340: */
+	x[i__] = zz[ip];
+    }
+/*        ALL NEW COEFFS ARE POSITIVE.  LOOP BACK TO BEGINNING. */
+    goto L30;
+
+/*                        ******  END OF MAIN LOOP  ****** */
+
+/*                        COME TO HERE FOR TERMINATION. */
+/*                     COMPUTE THE NORM OF THE FINAL RESIDUAL VECTOR. */
+
+L350:
+/*  USE CON() TO FLIP THE SIGN OF A() WHERE A CONSTRAINT TO NON-POSITIVE VALUES */
+/*  IS DESIRED */
+    i__1 = *n;
+    for (c2 = 1; c2 <= i__1; ++c2) {
+	if (con[c2] < 0.) {
+	    i__2 = *m;
+	    for (c1 = 1; c1 <= i__2; ++c1) {
+		a[c1 + c2 * a_dim1] = -a[c1 + c2 * a_dim1];
+	    }
+	    x[c2] = -x[c2];
+	}
+    }
+    sm = 0.;
+    if (npp1 <= *m) {
+	i__1 = *m;
+	for (i__ = npp1; i__ <= i__1; ++i__) {
+/* L360: */
+/* Computing 2nd power */
+	    d__1 = b[i__];
+	    sm += d__1 * d__1;
+	}
+    } else {
+	i__1 = *n;
+	for (j = 1; j <= i__1; ++j) {
+/* L380: */
+	    w[j] = 0.;
+	}
+    }
+    *rnorm = sqrt(sm);
+    return 0;
+
+/*     THE FOLLOWING BLOCK OF CODE IS USED AS AN INTERNAL SUBROUTINE */
+/*     TO SOLVE THE TRIANGULAR SYSTEM, PUTTING THE SOLUTION IN ZZ(). */
+
+L400:
+    i__1 = nsetp;
+    for (l = 1; l <= i__1; ++l) {
+	ip = nsetp + 1 - l;
+	if (l != 1) {
+	    i__2 = ip;
+	    for (ii = 1; ii <= i__2; ++ii) {
+		zz[ii] -= a[ii + jj * a_dim1] * zz[ip + 1];
+/* L410: */
+	    }
+	}
+	jj = index[ip];
+	zz[ip] /= a[ip + jj * a_dim1];
+/* L430: */
+    }
+    switch (rtnkey) {
+	case 1:  goto L200;
+	case 2:  goto L320;
+    }
+    return 0;
+} /* nnnpls_ */
+
 //#endif
 
 /* Subroutine */ 
@@ -1282,6 +1749,474 @@ L400:
 
 } /* nnls_ */
 
+
+/* Note that calls to 'write' have been commented out */
+/* since such call trigger warnings in R -KMM, March 2012 */
+/* Also, made DUMMY double precision DUMMY(*) */
+/*     SUBROUTINE NNNPLS  (A,MDA,M,N,CON,B,X,RNORM,W,ZZ,INDEX,MODE) */
+
+/*  Algorithm NNNPLS: NONNEGATIVE LEAST SQUARES with trivial modifications */
+/*  to allow for non-positive constraints as well (made by Katharine Mullen, */
+/*  11.2007) */
+
+/*  The original version of this code was developed by */
+/*  Charles L. Lawson and Richard J. Hanson at Jet Propulsion Laboratory */
+/*  1973 JUN 15, and published in the book */
+/*  "SOLVING LEAST SQUARES PROBLEMS", Prentice-HalL, 1974. */
+/*  Revised FEB 1995 to accompany reprinting of the book by SIAM. */
+
+/*     GIVEN AN M BY N MATRIX, A, AND AN M-VECTOR, B,  COMPUTE AN */
+/*     N-VECTOR, X, THAT SOLVES THE LEAST SQUARES PROBLEM */
+
+/*                      A * X = B  SUBJECT TO X .GE. 0 */
+/*     ------------------------------------------------------------------ */
+/*                     Subroutine Arguments */
+
+/*     A(),MDA,M,N     MDA IS THE FIRST DIMENSIONING PARAMETER FOR THE */
+/*                     ARRAY, A().   ON ENTRY A() CONTAINS THE M BY N */
+/*                     MATRIX, A.           ON EXIT A() CONTAINS */
+/*                     THE PRODUCT MATRIX, Q*A , WHERE Q IS AN */
+/*                     M BY M ORTHOGONAL MATRIX GENERATED IMPLICITLY BY */
+/*                     THIS SUBROUTINE. */
+/*     B()     ON ENTRY B() CONTAINS THE M-VECTOR, B.   ON EXIT B() CON- */
+/*             TAINS Q*B. */
+/*     CON()   M-VECTOR CON, that contains -1 where B is constrained to a */
+/*             non-positive value, 1 where B is constrained to a non-negative */
+/*             value */
+/*     X()     ON ENTRY X() NEED NOT BE INITIALIZED.  ON EXIT X() WILL */
+/*             CONTAIN THE SOLUTION VECTOR. */
+/*     RNORM   ON EXIT RNORM CONTAINS THE EUCLIDEAN NORM OF THE */
+/*             RESIDUAL VECTOR. */
+/*     W()     AN N-ARRAY OF WORKING SPACE.  ON EXIT W() WILL CONTAIN */
+/*             THE DUAL SOLUTION VECTOR.   W WILL SATISFY W(I) = 0. */
+/*             FOR ALL I IN SET P  AND W(I) .LE. 0. FOR ALL I IN SET Z */
+/*     ZZ()     AN M-ARRAY OF WORKING SPACE. */
+/*     INDEX()     AN INTEGER WORKING ARRAY OF LENGTH AT LEAST N. */
+/*                 ON EXIT THE CONTENTS OF THIS ARRAY DEFINE THE SETS */
+/*                 P AND Z AS FOLLOWS.. */
+
+/*                 INDEX(1)   THRU INDEX(NSETP) = SET P. */
+/*                 INDEX(IZ1) THRU INDEX(IZ2)   = SET Z. */
+/*                 IZ1 = NSETP + 1 = NPP1 */
+/*                 IZ2 = N */
+/*     MODE    THIS IS A SUCCESS-FAILURE FLAG WITH THE FOLLOWING */
+/*             MEANINGS. */
+/*             1     THE SOLUTION HAS BEEN COMPUTED SUCCESSFULLY. */
+/*             2     THE DIMENSIONS OF THE PROBLEM ARE BAD. */
+/*                   EITHER M .LE. 0 OR N .LE. 0. */
+/*             3    ITERATION COUNT EXCEEDED.  MORE THAN 3*N ITERATIONS. */
+
+/*     ------------------------------------------------------------------ */
+/* Subroutine */ int nnnpls_(doublereal *a, integer *mda, integer *m, integer 
+	*n, doublereal *con, doublereal *b, doublereal *x, doublereal *rnorm, 
+	doublereal *w, doublereal *zz, integer *index, integer *mode)
+{
+    /* System generated locals */
+    integer a_dim1, a_offset, i__1, i__2;
+    doublereal d__1, d__2;
+
+    /* Builtin functions */
+    double sqrt(doublereal);
+
+    /* Local variables */
+    static integer i__, j, l;
+    static doublereal t;
+    static integer c1, c2;
+    static integer nsetp;
+    extern /* Subroutine */ int g1_(doublereal *, doublereal *, doublereal *, 
+	    doublereal *, doublereal *);
+    static doublereal cc;
+    extern /* Subroutine */ int h12_(integer *, integer *, integer *, integer 
+	    *, doublereal *, integer *, doublereal *, doublereal *, integer *,
+	     integer *, integer *);
+    static integer ii, jj, ip;
+    static doublereal sm;
+    static integer iz, jz;
+    static doublereal up, ss;
+    static integer iz1, iz2, npp1;
+    extern doublereal diff_(doublereal *, doublereal *);
+    static integer iter;
+    static doublereal temp, wmax, alpha, asave;
+    static integer itmax, izmax;
+    static doublereal dummy[1], unorm, ztest;
+    static integer rtnkey;
+
+/*     ------------------------------------------------------------------ */
+/*     integer INDEX(N) */
+/*     double precision A(MDA,N), B(M), W(N), X(N), ZZ(M) */
+/*     ------------------------------------------------------------------ */
+    /* Parameter adjustments */
+    a_dim1 = *mda;
+    a_offset = 1 + a_dim1;
+    a -= a_offset;
+    --con;
+    --b;
+    --x;
+    --w;
+    --zz;
+    --index;
+
+    /* Function Body */
+    *mode = 1;
+    if (*m <= 0 || *n <= 0) {
+	*mode = 2;
+	return 0;
+    }
+    iter = 0;
+    itmax = *n * 3;
+/*  USE CON() TO FLIP THE SIGN OF A() WHERE A CONSTRAINT TO NON-POSITIVE VALUES */
+/*  IS DESIRED */
+    i__1 = *n;
+    for (c2 = 1; c2 <= i__1; ++c2) {
+	if (con[c2] < 0.) {
+	    i__2 = *m;
+	    for (c1 = 1; c1 <= i__2; ++c1) {
+		a[c1 + c2 * a_dim1] = -a[c1 + c2 * a_dim1];
+	    }
+	}
+    }
+
+/*                    INITIALIZE THE ARRAYS INDEX() AND X(). */
+
+    i__1 = *n;
+    for (i__ = 1; i__ <= i__1; ++i__) {
+	x[i__] = 0.;
+/* L20: */
+	index[i__] = i__;
+    }
+
+    iz2 = *n;
+    iz1 = 1;
+    nsetp = 0;
+    npp1 = 1;
+/*                             ******  MAIN LOOP BEGINS HERE  ****** */
+L30:
+/*                  QUIT IF ALL COEFFICIENTS ARE ALREADY IN THE SOLUTION. */
+/*                        OR IF M COLS OF A HAVE BEEN TRIANGULARIZED. */
+
+    if (iz1 > iz2 || nsetp >= *m) {
+	goto L350;
+    }
+
+/*         COMPUTE COMPONENTS OF THE DUAL (NEGATIVE GRADIENT) VECTOR W(). */
+
+    i__1 = iz2;
+    for (iz = iz1; iz <= i__1; ++iz) {
+	j = index[iz];
+	sm = 0.;
+	i__2 = *m;
+	for (l = npp1; l <= i__2; ++l) {
+/* L40: */
+	    sm += a[l + j * a_dim1] * b[l];
+	}
+	w[j] = sm;
+/* L50: */
+    }
+/*                                   FIND LARGEST POSITIVE W(J). */
+L60:
+    wmax = 0.;
+    i__1 = iz2;
+    for (iz = iz1; iz <= i__1; ++iz) {
+	j = index[iz];
+	if (w[j] > wmax) {
+	    wmax = w[j];
+	    izmax = iz;
+	}
+/* L70: */
+    }
+
+/*             IF WMAX .LE. 0. GO TO TERMINATION. */
+/*             THIS INDICATES SATISFACTION OF THE KUHN-TUCKER CONDITIONS. */
+
+    if (wmax <= 0.) {
+	goto L350;
+    }
+    iz = izmax;
+    j = index[iz];
+
+/*     THE SIGN OF W(J) IS OK FOR J TO BE MOVED TO SET P. */
+/*     BEGIN THE TRANSFORMATION AND CHECK NEW DIAGONAL ELEMENT TO AVOID */
+/*     NEAR LINEAR DEPENDENCE. */
+
+    asave = a[npp1 + j * a_dim1];
+    i__1 = npp1 + 1;
+    h12_(&c__1, &npp1, &i__1, m, &a[j * a_dim1 + 1], &c__1, &up, dummy, &c__1,
+	     &c__1, &c__0);
+    unorm = 0.;
+    if (nsetp != 0) {
+	i__1 = nsetp;
+	for (l = 1; l <= i__1; ++l) {
+/* L90: */
+/* Computing 2nd power */
+	    d__1 = a[l + j * a_dim1];
+	    unorm += d__1 * d__1;
+	}
+    }
+    unorm = sqrt(unorm);
+    d__2 = unorm + (d__1 = a[npp1 + j * a_dim1], abs(d__1)) * .01;
+    if (diff_(&d__2, &unorm) > 0.) {
+
+/*        COL J IS SUFFICIENTLY INDEPENDENT.  COPY B INTO ZZ, UPDATE ZZ */
+/*        AND SOLVE FOR ZTEST ( = PROPOSED NEW VALUE FOR X(J) ). */
+
+	i__1 = *m;
+	for (l = 1; l <= i__1; ++l) {
+/* L120: */
+	    zz[l] = b[l];
+	}
+	i__1 = npp1 + 1;
+	h12_(&c__2, &npp1, &i__1, m, &a[j * a_dim1 + 1], &c__1, &up, &zz[1], &
+		c__1, &c__1, &c__1);
+	ztest = zz[npp1] / a[npp1 + j * a_dim1];
+
+/*                                     SEE IF ZTEST IS POSITIVE */
+
+	if (ztest > 0.) {
+	    goto L140;
+	}
+    }
+
+/*     REJECT J AS A CANDIDATE TO BE MOVED FROM SET Z TO SET P. */
+/*     RESTORE A(NPP1,J), SET W(J)=0., AND LOOP BACK TO TEST DUAL */
+/*     COEFFS AGAIN. */
+
+    a[npp1 + j * a_dim1] = asave;
+    w[j] = 0.;
+    goto L60;
+
+/*     THE INDEX  J=INDEX(IZ)  HAS BEEN SELECTED TO BE MOVED FROM */
+/*     SET Z TO SET P.    UPDATE B,  UPDATE INDICES,  APPLY HOUSEHOLDER */
+/*     TRANSFORMATIONS TO COLS IN NEW SET Z,  ZERO SUBDIAGONAL ELTS IN */
+/*     COL J,  SET W(J)=0. */
+
+L140:
+    i__1 = *m;
+    for (l = 1; l <= i__1; ++l) {
+/* L150: */
+	b[l] = zz[l];
+    }
+
+    index[iz] = index[iz1];
+    index[iz1] = j;
+    ++iz1;
+    nsetp = npp1;
+    ++npp1;
+
+    if (iz1 <= iz2) {
+	i__1 = iz2;
+	for (jz = iz1; jz <= i__1; ++jz) {
+	    jj = index[jz];
+	    h12_(&c__2, &nsetp, &npp1, m, &a[j * a_dim1 + 1], &c__1, &up, &a[
+		    jj * a_dim1 + 1], &c__1, mda, &c__1);
+/* L160: */
+	}
+    }
+
+    if (nsetp != *m) {
+	i__1 = *m;
+	for (l = npp1; l <= i__1; ++l) {
+/* L180: */
+	    a[l + j * a_dim1] = 0.;
+	}
+    }
+
+    w[j] = 0.;
+/*                                SOLVE THE TRIANGULAR SYSTEM. */
+/*                                STORE THE SOLUTION TEMPORARILY IN ZZ(). */
+    rtnkey = 1;
+    goto L400;
+L200:
+
+/*                       ******  SECONDARY LOOP BEGINS HERE ****** */
+
+/*                          ITERATION COUNTER. */
+
+L210:
+    ++iter;
+    if (iter > itmax) {
+	*mode = 3;
+/*        write (*,'(/a)') ' NNLS quitting on iteration count.' */
+	goto L350;
+    }
+
+/*                    SEE IF ALL NEW CONSTRAINED COEFFS ARE FEASIBLE. */
+/*                                  IF NOT COMPUTE ALPHA. */
+
+    alpha = 2.;
+    i__1 = nsetp;
+    for (ip = 1; ip <= i__1; ++ip) {
+	l = index[ip];
+	if (zz[ip] <= 0.) {
+	    t = -x[l] / (zz[ip] - x[l]);
+	    if (alpha > t) {
+		alpha = t;
+		jj = ip;
+	    }
+	}
+/* L240: */
+    }
+
+/*          IF ALL NEW CONSTRAINED COEFFS ARE FEASIBLE THEN ALPHA WILL */
+/*          STILL = 2.    IF SO EXIT FROM SECONDARY LOOP TO MAIN LOOP. */
+
+    if (alpha == 2.) {
+	goto L330;
+    }
+
+/*          OTHERWISE USE ALPHA WHICH WILL BE BETWEEN 0. AND 1. TO */
+/*          INTERPOLATE BETWEEN THE OLD X AND THE NEW ZZ. */
+
+    i__1 = nsetp;
+    for (ip = 1; ip <= i__1; ++ip) {
+	l = index[ip];
+	x[l] += alpha * (zz[ip] - x[l]);
+/* L250: */
+    }
+
+/*        MODIFY A AND B AND THE INDEX ARRAYS TO MOVE COEFFICIENT I */
+/*        FROM SET P TO SET Z. */
+
+    i__ = index[jj];
+L260:
+    x[i__] = 0.;
+
+    if (jj != nsetp) {
+	++jj;
+	i__1 = nsetp;
+	for (j = jj; j <= i__1; ++j) {
+	    ii = index[j];
+	    index[j - 1] = ii;
+	    g1_(&a[j - 1 + ii * a_dim1], &a[j + ii * a_dim1], &cc, &ss, &a[j 
+		    - 1 + ii * a_dim1]);
+	    a[j + ii * a_dim1] = 0.;
+	    i__2 = *n;
+	    for (l = 1; l <= i__2; ++l) {
+		if (l != ii) {
+
+/*                 Apply procedure G2 (CC,SS,A(J-1,L),A(J,L)) */
+
+		    temp = a[j - 1 + l * a_dim1];
+		    a[j - 1 + l * a_dim1] = cc * temp + ss * a[j + l * a_dim1]
+			    ;
+		    a[j + l * a_dim1] = -ss * temp + cc * a[j + l * a_dim1];
+		}
+/* L270: */
+	    }
+
+/*                 Apply procedure G2 (CC,SS,B(J-1),B(J)) */
+
+	    temp = b[j - 1];
+	    b[j - 1] = cc * temp + ss * b[j];
+	    b[j] = -ss * temp + cc * b[j];
+/* L280: */
+	}
+    }
+
+    npp1 = nsetp;
+    --(nsetp);
+    --iz1;
+    index[iz1] = i__;
+
+/*        SEE IF THE REMAINING COEFFS IN SET P ARE FEASIBLE.  THEY SHOULD */
+/*        BE BECAUSE OF THE WAY ALPHA WAS DETERMINED. */
+/*        IF ANY ARE INFEASIBLE IT IS DUE TO ROUND-OFF ERROR.  ANY */
+/*        THAT ARE NONPOSITIVE WILL BE SET TO ZERO */
+/*        AND MOVED FROM SET P TO SET Z. */
+
+    i__1 = nsetp;
+    for (jj = 1; jj <= i__1; ++jj) {
+	i__ = index[jj];
+	if (x[i__] <= 0.) {
+	    goto L260;
+	}
+/* L300: */
+    }
+
+/*         COPY B( ) INTO ZZ( ).  THEN SOLVE AGAIN AND LOOP BACK. */
+
+    i__1 = *m;
+    for (i__ = 1; i__ <= i__1; ++i__) {
+/* L310: */
+	zz[i__] = b[i__];
+    }
+    rtnkey = 2;
+    goto L400;
+L320:
+    goto L210;
+/*                      ******  END OF SECONDARY LOOP  ****** */
+
+L330:
+    i__1 = nsetp;
+    for (ip = 1; ip <= i__1; ++ip) {
+	i__ = index[ip];
+/* L340: */
+	x[i__] = zz[ip];
+    }
+/*        ALL NEW COEFFS ARE POSITIVE.  LOOP BACK TO BEGINNING. */
+    goto L30;
+
+/*                        ******  END OF MAIN LOOP  ****** */
+
+/*                        COME TO HERE FOR TERMINATION. */
+/*                     COMPUTE THE NORM OF THE FINAL RESIDUAL VECTOR. */
+
+L350:
+/*  USE CON() TO FLIP THE SIGN OF A() WHERE A CONSTRAINT TO NON-POSITIVE VALUES */
+/*  IS DESIRED */
+    i__1 = *n;
+    for (c2 = 1; c2 <= i__1; ++c2) {
+	if (con[c2] < 0.) {
+	    i__2 = *m;
+	    for (c1 = 1; c1 <= i__2; ++c1) {
+		a[c1 + c2 * a_dim1] = -a[c1 + c2 * a_dim1];
+	    }
+	    x[c2] = -x[c2];
+	}
+    }
+    sm = 0.;
+    if (npp1 <= *m) {
+	i__1 = *m;
+	for (i__ = npp1; i__ <= i__1; ++i__) {
+/* L360: */
+/* Computing 2nd power */
+	    d__1 = b[i__];
+	    sm += d__1 * d__1;
+	}
+    } else {
+	i__1 = *n;
+	for (j = 1; j <= i__1; ++j) {
+/* L380: */
+	    w[j] = 0.;
+	}
+    }
+    *rnorm = sqrt(sm);
+    return 0;
+
+/*     THE FOLLOWING BLOCK OF CODE IS USED AS AN INTERNAL SUBROUTINE */
+/*     TO SOLVE THE TRIANGULAR SYSTEM, PUTTING THE SOLUTION IN ZZ(). */
+
+L400:
+    i__1 = nsetp;
+    for (l = 1; l <= i__1; ++l) {
+	ip = nsetp + 1 - l;
+	if (l != 1) {
+	    i__2 = ip;
+	    for (ii = 1; ii <= i__2; ++ii) {
+		zz[ii] -= a[ii + jj * a_dim1] * zz[ip + 1];
+/* L410: */
+	    }
+	}
+	jj = index[ip];
+	zz[ip] /= a[ip + jj * a_dim1];
+/* L430: */
+    }
+    switch (rtnkey) {
+	case 1:  goto L200;
+	case 2:  goto L320;
+    }
+    return 0;
+} /* nnnpls_ */
+
 //#endif
 
 /* Subroutine */ 
@@ -2033,6 +2968,474 @@ L400:
 
 } /* nnls_ */
 
+
+/* Note that calls to 'write' have been commented out */
+/* since such call trigger warnings in R -KMM, March 2012 */
+/* Also, made DUMMY double precision DUMMY(*) */
+/*     SUBROUTINE NNNPLS  (A,MDA,M,N,CON,B,X,RNORM,W,ZZ,INDEX,MODE) */
+
+/*  Algorithm NNNPLS: NONNEGATIVE LEAST SQUARES with trivial modifications */
+/*  to allow for non-positive constraints as well (made by Katharine Mullen, */
+/*  11.2007) */
+
+/*  The original version of this code was developed by */
+/*  Charles L. Lawson and Richard J. Hanson at Jet Propulsion Laboratory */
+/*  1973 JUN 15, and published in the book */
+/*  "SOLVING LEAST SQUARES PROBLEMS", Prentice-HalL, 1974. */
+/*  Revised FEB 1995 to accompany reprinting of the book by SIAM. */
+
+/*     GIVEN AN M BY N MATRIX, A, AND AN M-VECTOR, B,  COMPUTE AN */
+/*     N-VECTOR, X, THAT SOLVES THE LEAST SQUARES PROBLEM */
+
+/*                      A * X = B  SUBJECT TO X .GE. 0 */
+/*     ------------------------------------------------------------------ */
+/*                     Subroutine Arguments */
+
+/*     A(),MDA,M,N     MDA IS THE FIRST DIMENSIONING PARAMETER FOR THE */
+/*                     ARRAY, A().   ON ENTRY A() CONTAINS THE M BY N */
+/*                     MATRIX, A.           ON EXIT A() CONTAINS */
+/*                     THE PRODUCT MATRIX, Q*A , WHERE Q IS AN */
+/*                     M BY M ORTHOGONAL MATRIX GENERATED IMPLICITLY BY */
+/*                     THIS SUBROUTINE. */
+/*     B()     ON ENTRY B() CONTAINS THE M-VECTOR, B.   ON EXIT B() CON- */
+/*             TAINS Q*B. */
+/*     CON()   M-VECTOR CON, that contains -1 where B is constrained to a */
+/*             non-positive value, 1 where B is constrained to a non-negative */
+/*             value */
+/*     X()     ON ENTRY X() NEED NOT BE INITIALIZED.  ON EXIT X() WILL */
+/*             CONTAIN THE SOLUTION VECTOR. */
+/*     RNORM   ON EXIT RNORM CONTAINS THE EUCLIDEAN NORM OF THE */
+/*             RESIDUAL VECTOR. */
+/*     W()     AN N-ARRAY OF WORKING SPACE.  ON EXIT W() WILL CONTAIN */
+/*             THE DUAL SOLUTION VECTOR.   W WILL SATISFY W(I) = 0. */
+/*             FOR ALL I IN SET P  AND W(I) .LE. 0. FOR ALL I IN SET Z */
+/*     ZZ()     AN M-ARRAY OF WORKING SPACE. */
+/*     INDEX()     AN INTEGER WORKING ARRAY OF LENGTH AT LEAST N. */
+/*                 ON EXIT THE CONTENTS OF THIS ARRAY DEFINE THE SETS */
+/*                 P AND Z AS FOLLOWS.. */
+
+/*                 INDEX(1)   THRU INDEX(NSETP) = SET P. */
+/*                 INDEX(IZ1) THRU INDEX(IZ2)   = SET Z. */
+/*                 IZ1 = NSETP + 1 = NPP1 */
+/*                 IZ2 = N */
+/*     MODE    THIS IS A SUCCESS-FAILURE FLAG WITH THE FOLLOWING */
+/*             MEANINGS. */
+/*             1     THE SOLUTION HAS BEEN COMPUTED SUCCESSFULLY. */
+/*             2     THE DIMENSIONS OF THE PROBLEM ARE BAD. */
+/*                   EITHER M .LE. 0 OR N .LE. 0. */
+/*             3    ITERATION COUNT EXCEEDED.  MORE THAN 3*N ITERATIONS. */
+
+/*     ------------------------------------------------------------------ */
+/* Subroutine */ int nnnpls_(doublereal *a, integer *mda, integer *m, integer 
+	*n, doublereal *con, doublereal *b, doublereal *x, doublereal *rnorm, 
+	doublereal *w, doublereal *zz, integer *index, integer *mode)
+{
+    /* System generated locals */
+    integer a_dim1, a_offset, i__1, i__2;
+    doublereal d__1, d__2;
+
+    /* Builtin functions */
+    double sqrt(doublereal);
+
+    /* Local variables */
+    static integer i__, j, l;
+    static doublereal t;
+    static integer c1, c2;
+    static integer nsetp;
+    extern /* Subroutine */ int g1_(doublereal *, doublereal *, doublereal *, 
+	    doublereal *, doublereal *);
+    static doublereal cc;
+    extern /* Subroutine */ int h12_(integer *, integer *, integer *, integer 
+	    *, doublereal *, integer *, doublereal *, doublereal *, integer *,
+	     integer *, integer *);
+    static integer ii, jj, ip;
+    static doublereal sm;
+    static integer iz, jz;
+    static doublereal up, ss;
+    static integer iz1, iz2, npp1;
+    extern doublereal diff_(doublereal *, doublereal *);
+    static integer iter;
+    static doublereal temp, wmax, alpha, asave;
+    static integer itmax, izmax;
+    static doublereal dummy[1], unorm, ztest;
+    static integer rtnkey;
+
+/*     ------------------------------------------------------------------ */
+/*     integer INDEX(N) */
+/*     double precision A(MDA,N), B(M), W(N), X(N), ZZ(M) */
+/*     ------------------------------------------------------------------ */
+    /* Parameter adjustments */
+    a_dim1 = *mda;
+    a_offset = 1 + a_dim1;
+    a -= a_offset;
+    --con;
+    --b;
+    --x;
+    --w;
+    --zz;
+    --index;
+
+    /* Function Body */
+    *mode = 1;
+    if (*m <= 0 || *n <= 0) {
+	*mode = 2;
+	return 0;
+    }
+    iter = 0;
+    itmax = *n * 3;
+/*  USE CON() TO FLIP THE SIGN OF A() WHERE A CONSTRAINT TO NON-POSITIVE VALUES */
+/*  IS DESIRED */
+    i__1 = *n;
+    for (c2 = 1; c2 <= i__1; ++c2) {
+	if (con[c2] < 0.) {
+	    i__2 = *m;
+	    for (c1 = 1; c1 <= i__2; ++c1) {
+		a[c1 + c2 * a_dim1] = -a[c1 + c2 * a_dim1];
+	    }
+	}
+    }
+
+/*                    INITIALIZE THE ARRAYS INDEX() AND X(). */
+
+    i__1 = *n;
+    for (i__ = 1; i__ <= i__1; ++i__) {
+	x[i__] = 0.;
+/* L20: */
+	index[i__] = i__;
+    }
+
+    iz2 = *n;
+    iz1 = 1;
+    nsetp = 0;
+    npp1 = 1;
+/*                             ******  MAIN LOOP BEGINS HERE  ****** */
+L30:
+/*                  QUIT IF ALL COEFFICIENTS ARE ALREADY IN THE SOLUTION. */
+/*                        OR IF M COLS OF A HAVE BEEN TRIANGULARIZED. */
+
+    if (iz1 > iz2 || nsetp >= *m) {
+	goto L350;
+    }
+
+/*         COMPUTE COMPONENTS OF THE DUAL (NEGATIVE GRADIENT) VECTOR W(). */
+
+    i__1 = iz2;
+    for (iz = iz1; iz <= i__1; ++iz) {
+	j = index[iz];
+	sm = 0.;
+	i__2 = *m;
+	for (l = npp1; l <= i__2; ++l) {
+/* L40: */
+	    sm += a[l + j * a_dim1] * b[l];
+	}
+	w[j] = sm;
+/* L50: */
+    }
+/*                                   FIND LARGEST POSITIVE W(J). */
+L60:
+    wmax = 0.;
+    i__1 = iz2;
+    for (iz = iz1; iz <= i__1; ++iz) {
+	j = index[iz];
+	if (w[j] > wmax) {
+	    wmax = w[j];
+	    izmax = iz;
+	}
+/* L70: */
+    }
+
+/*             IF WMAX .LE. 0. GO TO TERMINATION. */
+/*             THIS INDICATES SATISFACTION OF THE KUHN-TUCKER CONDITIONS. */
+
+    if (wmax <= 0.) {
+	goto L350;
+    }
+    iz = izmax;
+    j = index[iz];
+
+/*     THE SIGN OF W(J) IS OK FOR J TO BE MOVED TO SET P. */
+/*     BEGIN THE TRANSFORMATION AND CHECK NEW DIAGONAL ELEMENT TO AVOID */
+/*     NEAR LINEAR DEPENDENCE. */
+
+    asave = a[npp1 + j * a_dim1];
+    i__1 = npp1 + 1;
+    h12_(&c__1, &npp1, &i__1, m, &a[j * a_dim1 + 1], &c__1, &up, dummy, &c__1,
+	     &c__1, &c__0);
+    unorm = 0.;
+    if (nsetp != 0) {
+	i__1 = nsetp;
+	for (l = 1; l <= i__1; ++l) {
+/* L90: */
+/* Computing 2nd power */
+	    d__1 = a[l + j * a_dim1];
+	    unorm += d__1 * d__1;
+	}
+    }
+    unorm = sqrt(unorm);
+    d__2 = unorm + (d__1 = a[npp1 + j * a_dim1], abs(d__1)) * .01;
+    if (diff_(&d__2, &unorm) > 0.) {
+
+/*        COL J IS SUFFICIENTLY INDEPENDENT.  COPY B INTO ZZ, UPDATE ZZ */
+/*        AND SOLVE FOR ZTEST ( = PROPOSED NEW VALUE FOR X(J) ). */
+
+	i__1 = *m;
+	for (l = 1; l <= i__1; ++l) {
+/* L120: */
+	    zz[l] = b[l];
+	}
+	i__1 = npp1 + 1;
+	h12_(&c__2, &npp1, &i__1, m, &a[j * a_dim1 + 1], &c__1, &up, &zz[1], &
+		c__1, &c__1, &c__1);
+	ztest = zz[npp1] / a[npp1 + j * a_dim1];
+
+/*                                     SEE IF ZTEST IS POSITIVE */
+
+	if (ztest > 0.) {
+	    goto L140;
+	}
+    }
+
+/*     REJECT J AS A CANDIDATE TO BE MOVED FROM SET Z TO SET P. */
+/*     RESTORE A(NPP1,J), SET W(J)=0., AND LOOP BACK TO TEST DUAL */
+/*     COEFFS AGAIN. */
+
+    a[npp1 + j * a_dim1] = asave;
+    w[j] = 0.;
+    goto L60;
+
+/*     THE INDEX  J=INDEX(IZ)  HAS BEEN SELECTED TO BE MOVED FROM */
+/*     SET Z TO SET P.    UPDATE B,  UPDATE INDICES,  APPLY HOUSEHOLDER */
+/*     TRANSFORMATIONS TO COLS IN NEW SET Z,  ZERO SUBDIAGONAL ELTS IN */
+/*     COL J,  SET W(J)=0. */
+
+L140:
+    i__1 = *m;
+    for (l = 1; l <= i__1; ++l) {
+/* L150: */
+	b[l] = zz[l];
+    }
+
+    index[iz] = index[iz1];
+    index[iz1] = j;
+    ++iz1;
+    nsetp = npp1;
+    ++npp1;
+
+    if (iz1 <= iz2) {
+	i__1 = iz2;
+	for (jz = iz1; jz <= i__1; ++jz) {
+	    jj = index[jz];
+	    h12_(&c__2, &nsetp, &npp1, m, &a[j * a_dim1 + 1], &c__1, &up, &a[
+		    jj * a_dim1 + 1], &c__1, mda, &c__1);
+/* L160: */
+	}
+    }
+
+    if (nsetp != *m) {
+	i__1 = *m;
+	for (l = npp1; l <= i__1; ++l) {
+/* L180: */
+	    a[l + j * a_dim1] = 0.;
+	}
+    }
+
+    w[j] = 0.;
+/*                                SOLVE THE TRIANGULAR SYSTEM. */
+/*                                STORE THE SOLUTION TEMPORARILY IN ZZ(). */
+    rtnkey = 1;
+    goto L400;
+L200:
+
+/*                       ******  SECONDARY LOOP BEGINS HERE ****** */
+
+/*                          ITERATION COUNTER. */
+
+L210:
+    ++iter;
+    if (iter > itmax) {
+	*mode = 3;
+/*        write (*,'(/a)') ' NNLS quitting on iteration count.' */
+	goto L350;
+    }
+
+/*                    SEE IF ALL NEW CONSTRAINED COEFFS ARE FEASIBLE. */
+/*                                  IF NOT COMPUTE ALPHA. */
+
+    alpha = 2.;
+    i__1 = nsetp;
+    for (ip = 1; ip <= i__1; ++ip) {
+	l = index[ip];
+	if (zz[ip] <= 0.) {
+	    t = -x[l] / (zz[ip] - x[l]);
+	    if (alpha > t) {
+		alpha = t;
+		jj = ip;
+	    }
+	}
+/* L240: */
+    }
+
+/*          IF ALL NEW CONSTRAINED COEFFS ARE FEASIBLE THEN ALPHA WILL */
+/*          STILL = 2.    IF SO EXIT FROM SECONDARY LOOP TO MAIN LOOP. */
+
+    if (alpha == 2.) {
+	goto L330;
+    }
+
+/*          OTHERWISE USE ALPHA WHICH WILL BE BETWEEN 0. AND 1. TO */
+/*          INTERPOLATE BETWEEN THE OLD X AND THE NEW ZZ. */
+
+    i__1 = nsetp;
+    for (ip = 1; ip <= i__1; ++ip) {
+	l = index[ip];
+	x[l] += alpha * (zz[ip] - x[l]);
+/* L250: */
+    }
+
+/*        MODIFY A AND B AND THE INDEX ARRAYS TO MOVE COEFFICIENT I */
+/*        FROM SET P TO SET Z. */
+
+    i__ = index[jj];
+L260:
+    x[i__] = 0.;
+
+    if (jj != nsetp) {
+	++jj;
+	i__1 = nsetp;
+	for (j = jj; j <= i__1; ++j) {
+	    ii = index[j];
+	    index[j - 1] = ii;
+	    g1_(&a[j - 1 + ii * a_dim1], &a[j + ii * a_dim1], &cc, &ss, &a[j 
+		    - 1 + ii * a_dim1]);
+	    a[j + ii * a_dim1] = 0.;
+	    i__2 = *n;
+	    for (l = 1; l <= i__2; ++l) {
+		if (l != ii) {
+
+/*                 Apply procedure G2 (CC,SS,A(J-1,L),A(J,L)) */
+
+		    temp = a[j - 1 + l * a_dim1];
+		    a[j - 1 + l * a_dim1] = cc * temp + ss * a[j + l * a_dim1]
+			    ;
+		    a[j + l * a_dim1] = -ss * temp + cc * a[j + l * a_dim1];
+		}
+/* L270: */
+	    }
+
+/*                 Apply procedure G2 (CC,SS,B(J-1),B(J)) */
+
+	    temp = b[j - 1];
+	    b[j - 1] = cc * temp + ss * b[j];
+	    b[j] = -ss * temp + cc * b[j];
+/* L280: */
+	}
+    }
+
+    npp1 = nsetp;
+    --(nsetp);
+    --iz1;
+    index[iz1] = i__;
+
+/*        SEE IF THE REMAINING COEFFS IN SET P ARE FEASIBLE.  THEY SHOULD */
+/*        BE BECAUSE OF THE WAY ALPHA WAS DETERMINED. */
+/*        IF ANY ARE INFEASIBLE IT IS DUE TO ROUND-OFF ERROR.  ANY */
+/*        THAT ARE NONPOSITIVE WILL BE SET TO ZERO */
+/*        AND MOVED FROM SET P TO SET Z. */
+
+    i__1 = nsetp;
+    for (jj = 1; jj <= i__1; ++jj) {
+	i__ = index[jj];
+	if (x[i__] <= 0.) {
+	    goto L260;
+	}
+/* L300: */
+    }
+
+/*         COPY B( ) INTO ZZ( ).  THEN SOLVE AGAIN AND LOOP BACK. */
+
+    i__1 = *m;
+    for (i__ = 1; i__ <= i__1; ++i__) {
+/* L310: */
+	zz[i__] = b[i__];
+    }
+    rtnkey = 2;
+    goto L400;
+L320:
+    goto L210;
+/*                      ******  END OF SECONDARY LOOP  ****** */
+
+L330:
+    i__1 = nsetp;
+    for (ip = 1; ip <= i__1; ++ip) {
+	i__ = index[ip];
+/* L340: */
+	x[i__] = zz[ip];
+    }
+/*        ALL NEW COEFFS ARE POSITIVE.  LOOP BACK TO BEGINNING. */
+    goto L30;
+
+/*                        ******  END OF MAIN LOOP  ****** */
+
+/*                        COME TO HERE FOR TERMINATION. */
+/*                     COMPUTE THE NORM OF THE FINAL RESIDUAL VECTOR. */
+
+L350:
+/*  USE CON() TO FLIP THE SIGN OF A() WHERE A CONSTRAINT TO NON-POSITIVE VALUES */
+/*  IS DESIRED */
+    i__1 = *n;
+    for (c2 = 1; c2 <= i__1; ++c2) {
+	if (con[c2] < 0.) {
+	    i__2 = *m;
+	    for (c1 = 1; c1 <= i__2; ++c1) {
+		a[c1 + c2 * a_dim1] = -a[c1 + c2 * a_dim1];
+	    }
+	    x[c2] = -x[c2];
+	}
+    }
+    sm = 0.;
+    if (npp1 <= *m) {
+	i__1 = *m;
+	for (i__ = npp1; i__ <= i__1; ++i__) {
+/* L360: */
+/* Computing 2nd power */
+	    d__1 = b[i__];
+	    sm += d__1 * d__1;
+	}
+    } else {
+	i__1 = *n;
+	for (j = 1; j <= i__1; ++j) {
+/* L380: */
+	    w[j] = 0.;
+	}
+    }
+    *rnorm = sqrt(sm);
+    return 0;
+
+/*     THE FOLLOWING BLOCK OF CODE IS USED AS AN INTERNAL SUBROUTINE */
+/*     TO SOLVE THE TRIANGULAR SYSTEM, PUTTING THE SOLUTION IN ZZ(). */
+
+L400:
+    i__1 = nsetp;
+    for (l = 1; l <= i__1; ++l) {
+	ip = nsetp + 1 - l;
+	if (l != 1) {
+	    i__2 = ip;
+	    for (ii = 1; ii <= i__2; ++ii) {
+		zz[ii] -= a[ii + jj * a_dim1] * zz[ip + 1];
+/* L410: */
+	    }
+	}
+	jj = index[ip];
+	zz[ip] /= a[ip + jj * a_dim1];
+/* L430: */
+    }
+    switch (rtnkey) {
+	case 1:  goto L200;
+	case 2:  goto L320;
+    }
+    return 0;
+} /* nnnpls_ */
+
 //#endif
 
 /* Subroutine */ 
@@ -2309,9 +3712,13 @@ int nnls_c(double* a, long long* mda, long long* m, long long* n, double* b,
 {
 	return (nnls_(a, mda, m, n, b, x, rnorm, w, zz, index, mode));
 }
-//#endif
 
-
+int nnnpls_c(double* a, long long* mda, long long* m, long long* n, double* con, double* b,
+             double* x, double* rnorm, double* w, double* zz, long long* index,
+             long long *mode)
+{
+	return (nnnpls_(a, mda, m, n, con, b, x, rnorm, w, zz, index, mode));
+}
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
 //
@@ -2353,6 +3760,40 @@ int nnls_Weighted( double* a, long long* mda, long long* m, long long* n, double
 	return (nnls_c(a, mda, m, n, b, x, rnorm, w, zz, index, mode));
 }
 
+int nnnpls_Weighted( double* a, int* mda, int* m, int* n, double* con, double* b, double *pWghts,
+	              double* x, double* rnorm, double* w, double* zz, int* index, 
+	              int* mode)
+{
+	//
+	// weight the data here by multiplying BOTH sides by the weight
+	//
+	int nRows = *m;
+	int nCols = *n;
+
+	for ( int i=0; i<nRows; i++ )
+	{
+		//
+		// this loop will NOT weight the intercept column
+		// but will weight the response and the splined environmental matrix
+		//
+		//for ( int j=1; j<nCols; j++ )  
+
+		//
+		// this loop will weight the intercept column and the response and the splined environmental matrix
+		//
+		for ( int j=0; j<nCols; j++ )  
+		{
+			a[(j*nRows)+i] *= pWghts[i];	
+		}
+		b[i] *= pWghts[i];	
+	}
+
+	//
+	// call nnls with weighted data
+	//
+	return (nnnpls_c(a, mda, m, n, con, b, x, rnorm, w, zz, index, mode));
+}
+//#endif
 
 #elif defined _WIN32
 
@@ -2365,9 +3806,13 @@ int nnls_c(double* a, int* mda, int* m, int* n, double* b,
 {
 	return (nnls_(a, mda, m, n, b, x, rnorm, w, zz, index, mode));
 }
-//#endif
 
-
+int nnnpls_c(double* a, int* mda, int* m, int* n, double* con, double* b,
+             double* x, double* rnorm, double* w, double* zz, int* index,
+             int *mode)
+{
+	return (nnnpls_(a, mda, m, n, con, b, x, rnorm, w, zz, index, mode));
+}
 
 ///////////////////////////////////////////////////////////////////////////////////////////////
 //
@@ -2411,6 +3856,41 @@ int nnls_Weighted( double* a, int* mda, int* m, int* n, double* b, double *pWght
 //
 //
 ///////////////////////////////////////////////////////////////////////////////////////////////
+
+int nnnpls_Weighted( double* a, int* mda, int* m, int* n, double* con, double* b, double *pWghts,
+	              double* x, double* rnorm, double* w, double* zz, int* index, 
+	              int* mode)
+{
+	//
+	// weight the data here by multiplying BOTH sides by the weight
+	//
+	int nRows = *m;
+	int nCols = *n;
+
+	for ( int i=0; i<nRows; i++ )
+	{
+		//
+		// this loop will NOT weight the intercept column
+		// but will weight the response and the splined environmental matrix
+		//
+		//for ( int j=1; j<nCols; j++ )  
+
+		//
+		// this loop will weight the intercept column and the response and the splined environmental matrix
+		//
+		for ( int j=0; j<nCols; j++ )  
+		{
+			a[(j*nRows)+i] *= pWghts[i];	
+		}
+		b[i] *= pWghts[i];	
+	}
+
+	//
+	// call nnls with weighted data
+	//
+	return (nnnpls_c(a, mda, m, n, con, b, x, rnorm, w, zz, index, mode));
+}
+//#endif
 
 #else // Linux
 
@@ -2424,6 +3904,13 @@ int nnls_c(double* a, int* mda, int* m, int* n, double* b,
 {
 	return (nnls_(a, mda, m, n, b, x, rnorm, w, zz, index, mode));
 }
+
+int nnnpls_c(double* a, int* mda, int* m, int* n, double* con, double* b,
+             double* x, double* rnorm, double* w, double* zz, int* index,
+             int *mode)
+{
+	return (nnnpls_(a, mda, m, n, con, b, x, rnorm, w, zz, index, mode));
+}
 //#endif
 
 
@@ -2470,5 +3957,39 @@ int nnls_Weighted( double* a, int* mda, int* m, int* n, double* b, double *pWght
 //
 //
 ///////////////////////////////////////////////////////////////////////////////////////////////
+
+int nnnpls_Weighted( double* a, int* mda, int* m, int* n, double* con, double* b, double *pWghts,
+	              double* x, double* rnorm, double* w, double* zz, int* index, 
+	              int* mode)
+{
+	//
+	// weight the data here by multiplying BOTH sides by the weight
+	//
+	int nRows = *m;
+	int nCols = *n;
+
+	for ( int i=0; i<nRows; i++ )
+	{
+		//
+		// this loop will NOT weight the intercept column
+		// but will weight the response and the splined environmental matrix
+		//
+		//for ( int j=1; j<nCols; j++ )  
+
+		//
+		// this loop will weight the intercept column and the response and the splined environmental matrix
+		//
+		for ( int j=0; j<nCols; j++ )  
+		{
+			a[(j*nRows)+i] *= pWghts[i];	
+		}
+		b[i] *= pWghts[i];	
+	}
+
+	//
+	// call nnls with weighted data
+	//
+	return (nnnpls_c(a, mda, m, n, con, b, x, rnorm, w, zz, index, mode));
+}
 
 #endif
